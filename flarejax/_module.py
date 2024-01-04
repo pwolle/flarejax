@@ -78,7 +78,7 @@ class ModuleList(Module):
     List of modules.
     """
 
-    modules: list[Any]
+    modules: list
 
     @typeguard.typechecked
     def __init__(self, *modules: Any) -> None:

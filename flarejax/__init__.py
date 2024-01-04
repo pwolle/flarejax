@@ -8,3 +8,5 @@ __all__ = [
     "Param",
     "PyTreeBase",
 ]
+
+__version__ = "0.0.1"
