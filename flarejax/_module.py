@@ -56,10 +56,8 @@ class Module(_pytree.PyTreeBase):
     ) -> Self:
         active_old, treedef = jtree.tree_flatten(self)
 
-        active: dict[str, jax.Array] = jnp.load(path)  # type: ignore
-        assert isinstance(active, dict), "Loaded data is not a dict."
-
-        active_new = list(active.values())
+        active = jnp.load(path)  # type: ignore
+        active_new = list(active.values())  # type: ignore
 
         for new, old in zip(active_new, active_old):
             if valid_dtype and new.dtype != old.dtype:
