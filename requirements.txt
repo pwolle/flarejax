@@ -1,3 +1,4 @@
-typeguard
 jax
 jaxlib
+typeguard
+jaxtyping

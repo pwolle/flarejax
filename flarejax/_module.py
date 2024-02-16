@@ -1,9 +1,8 @@
-from typing import Any, Self
+from typing import Any, Mapping, Self
 
-import jax
 import jax.numpy as jnp
 import jax.tree_util as jtree
-import typeguard
+from typeguard import typechecked
 
 from . import _pytree
 
@@ -13,96 +12,138 @@ __all__ = [
 ]
 
 
+@typechecked
 class Module(_pytree.PyTreeBase):
     """
     Base class for modules.
     """
 
-    @typeguard.typechecked
-    def tree_flatten(
+    def tree_flatten_with_keys(
         self: Self,
-    ) -> tuple[tuple[dict[str, "Module"]], dict[str, Any]]:
-        modules, statics = {}, {}
+    ) -> tuple[tuple[tuple[jtree.GetAttrKey, "Module"], ...], dict[str, Any]]:
+        modules = []
+        statics = []
 
-        for k, v in self.__dict__.items():
-            if isinstance(v, Module):
-                modules[k] = v
-            else:
-                statics[k] = v
+        module_keys = []
+        static_keys = []
 
-        return (modules,), statics
+        for name in sorted(self.__dict__.keys()):
+            value = self.__dict__[name]
+
+            if isinstance(value, Module):
+                modules.append((jtree.GetAttrKey(name), value))
+                module_keys.append(name)
+                continue
+
+            statics.append(value)
+            static_keys.append(name)
+
+        children = tuple(modules)
+        aux_data = {
+            "module_keys": module_keys,
+            "static_keys": static_keys,
+            "statics": statics,
+        }
+        return children, aux_data
 
     @classmethod
     def tree_unflatten(
-        cls: type[Self],
-        statics: dict[str, Any],
-        modules: tuple[dict[str, "Module"]],
+        cls, aux_data: dict[str, Any], children: tuple["Module", ...]
     ) -> Self:
+        modules = dict(zip(aux_data["module_keys"], children))
+        statics = dict(zip(aux_data["static_keys"], aux_data["statics"]))
+
         instance = cls.__new__(cls)
-        instance.__dict__ |= statics | modules[0]
+        instance.__dict__ |= statics | modules
         return instance
 
-    @typeguard.typechecked
     def save_leaves(self: Self, path: str) -> None:
-        leaves = jtree.tree_leaves(self)
-        jnp.savez(path, *leaves)
+        flat, _ = jtree.tree_flatten_with_path(self)
 
-    @typeguard.typechecked
-    def load_leaves(
-        self: Self,
-        path: str,
-        valid_dtype: bool = True,
-        valid_shape: bool = True,
-    ) -> Self:
-        active_old, treedef = jtree.tree_flatten(self)
+        leaves = {}
+        for key_path, value in flat:
+            leaves[f"leaves{jtree.keystr(key_path)}"] = value
 
-        active = jnp.load(path)  # type: ignore
-        active_new = list(active.values())  # type: ignore
+        jnp.savez(path, **leaves)
 
-        for new, old in zip(active_new, active_old):
-            if valid_dtype and new.dtype != old.dtype:
-                error = f"Dtype: Loaded {new.dtype} != module {old.dtype}."
+    def load_leaves(self: Self, path: str):
+        flat_old, treedef = jtree.tree_flatten_with_path(self)
+        flat_new = []
+
+        leaves: Mapping = jnp.load(path)  # type: ignore
+        keys = set()
+
+        for key_path, value_old in flat_old:
+            key = f"leaves{jtree.keystr(key_path)}"
+            keys.add(key)
+
+            value_new = leaves[key]
+
+            if value_new.dtype != value_old.dtype:
+                error = f"Dtype: Loaded {value_new.dtype} != {value_old.dtype}"
                 raise ValueError(error)
 
-            if valid_shape and new.shape != old.shape:
-                error = f"Shape: Loaded {new.shape} != module {old.shape}."
+            if value_new.shape != value_old.shape:
+                error = f"Shape: Loaded {value_new.shape} != {value_old.shape}"
                 raise ValueError(error)
 
-        return jtree.tree_unflatten(treedef, active_new)
+            flat_new.append((key_path, value_new))
+
+        if keys != set(leaves.keys()):
+            error = f"Keys: Loaded {set(leaves.keys())} != {keys}"
+            raise ValueError(error)
+
+        return jtree.tree_unflatten(treedef, flat_new)
 
 
+@typechecked
 class ModuleList(Module):
     """
     List of modules.
     """
 
-    modules: list
+    modules: list[Module | Any]
 
-    @typeguard.typechecked
     def __init__(self, *modules: Any) -> None:
         self.modules = list(modules)
 
-    @typeguard.typechecked
-    def tree_flatten(
+    def tree_flatten_with_keys(
         self: Self,
-    ) -> tuple[tuple[dict[int, Module]], dict[int, Any]]:
-        active = {}
-        static = {}
+    ) -> tuple[tuple[tuple[jtree.SequenceKey, Module], ...], dict[str, list]]:
+        modules = []
+        statics = []
+
+        module_indicies = []
+        static_indicies = []
 
         for i, value in enumerate(self.modules):
             if isinstance(value, Module):
-                active[i] = value
-            else:
-                static[i] = value
+                modules.append((jtree.SequenceKey(i), value))
+                module_indicies.append(i)
+                continue
 
-        return (active,), static
+            statics.append(value)
+            static_indicies.append(i)
+
+        children = tuple(modules)
+        aux_data = {
+            "module_keys": module_indicies,
+            "static_keys": static_indicies,
+            "statics": statics,
+        }
+        return children, aux_data
 
     @classmethod
     def tree_unflatten(
-        cls: type[Self],
-        statics: dict[int, Any],
-        modules: tuple[dict[int, Module]],
+        cls, aux_data: dict[str, list], children: tuple["Module", ...]
     ) -> Self:
-        data = statics | modules[0]
-        data = [data[i] for i in range(len(data))]
-        return cls(*data)
+        length = max(
+            max(aux_data["module_keys"], default=-1),
+            max(aux_data["static_keys"], default=-1),
+        )
+
+        modules = dict(zip(aux_data["module_keys"], children))
+        statics = dict(zip(aux_data["static_keys"], aux_data["statics"]))
+
+        modules = modules | statics
+        return cls(*[modules[i] for i in range(length + 1)])
