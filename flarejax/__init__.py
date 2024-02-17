@@ -8,7 +8,7 @@ from ._layers import (
 )
 from ._module import Module, ModuleList
 from ._param import Param
-from ._pytree import PyTreeBase
+from ._pytree import PyTreeWithKeys
 
 __all__ = [
     "LayerNorm",
@@ -20,7 +20,7 @@ __all__ = [
     "Module",
     "ModuleList",
     "Param",
-    "PyTreeBase",
+    "PyTreeWithKeys",
 ]
 
 __version__ = "0.1.0"

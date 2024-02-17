@@ -1,16 +1,15 @@
 import abc
-
+from typing import Self
 import jax.tree_util as jtree
 
 __all__ = [
-    "PyTreeBase",
+    "PyTreeWithKeys",
 ]
 
 
-class PyTreeMeta(type, metaclass=abc.ABCMeta):
+class PyTreeWithKeysMeta(abc.ABCMeta, type):
     """
-    Metaclass for registering PyTree nodes. Automatically registers
-    all subclasses as PyTrees.
+    Metaclass for registering a class as Jax PyTree with keys.
     """
 
     def __init__(cls, name, bases, attrs, **kwargs) -> None:
@@ -20,6 +19,8 @@ class PyTreeMeta(type, metaclass=abc.ABCMeta):
         super().__init__(name, bases, attrs, **kwargs)
         jtree.register_pytree_with_keys_class(cls)
 
+
+class PyTreeWithKeys(metaclass=PyTreeWithKeysMeta):
     @abc.abstractmethod
     def tree_flatten_with_keys(self):
         """
@@ -34,7 +35,3 @@ class PyTreeMeta(type, metaclass=abc.ABCMeta):
         Unflatten the PyTree node from a tuple of children and aux data.
         """
         raise NotImplementedError
-
-
-class PyTreeBase(metaclass=PyTreeMeta):
-    pass

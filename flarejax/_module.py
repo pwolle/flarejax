@@ -13,7 +13,7 @@ __all__ = [
 
 
 @typechecked
-class Module(_pytree.PyTreeBase):
+class Module(_pytree.PyTreeWithKeys):
     """
     Base class for modules.
     """
