@@ -4,7 +4,7 @@ import jax.lax as lax
 import jax.numpy as jnp
 import jax.random as jrandom
 import numpy as np
-from jaxtyping import Array, PRNGKeyArray, Float
+from jaxtyping import Array, Float, PRNGKeyArray
 from typeguard import typechecked
 
 from ._module import Module, ModuleList
