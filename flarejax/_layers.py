@@ -37,11 +37,6 @@ def init_zeros(_: PRNGKeyArray, dims: Sequence[int]) -> Array:
 
 
 @typechecked
-def init_ones(_: PRNGKeyArray, dims: Sequence[int]) -> Array:
-    return jnp.ones(dims, dtype=jnp.float32)
-
-
-@typechecked
 class Linear(Module):
     w: Param[Array]
     b: Param[Array | None]

@@ -3,7 +3,6 @@ from ._layers import (
     Linear,
     Sequential,
     init_he,
-    init_ones,
     init_zeros,
     layer_norm,
 )
@@ -16,7 +15,6 @@ __all__ = [
     "Linear",
     "Sequential",
     "init_he",
-    "init_ones",
     "init_zeros",
     "layer_norm",
     "Module",

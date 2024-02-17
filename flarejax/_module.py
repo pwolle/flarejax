@@ -1,4 +1,4 @@
-from typing import Any, Mapping, Self
+from typing import Any, Hashable, Mapping, Self, Sequence
 
 import jax.numpy as jnp
 import jax.tree_util as jtree
@@ -104,7 +104,7 @@ class ModuleList(Module):
 
     modules: list[Module | Any]
 
-    def __init__(self, *modules: Any) -> None:
+    def __init__(self, modules: Sequence) -> None:
         self.modules = list(modules)
 
     def tree_flatten_with_keys(
@@ -146,4 +146,46 @@ class ModuleList(Module):
         statics = dict(zip(aux_data["static_keys"], aux_data["statics"]))
 
         modules = modules | statics
-        return cls(*[modules[i] for i in range(length + 1)])
+        return cls([modules[i] for i in range(length + 1)])
+
+
+@typechecked
+class ModuleDict(Module):
+    def __init__(self, modules: dict[Hashable, Any]) -> None:
+        self.modules = modules
+
+    def tree_flatten_with_keys(
+        self: Self,
+    ) -> tuple[tuple[tuple[jtree.DictKey, Module], ...], dict[str, list]]:
+        modules = []
+        statics = []
+
+        module_keys = []
+        static_keys = []
+
+        for key, value in self.modules.items():
+            if isinstance(value, Module):
+                modules.append((jtree.DictKey(key), value))
+                module_keys.append(key)
+                continue
+
+            statics.append(value)
+            static_keys.append(key)
+
+        children = tuple(modules)
+        aux_data = {
+            "module_keys": module_keys,
+            "static_keys": static_keys,
+            "statics": statics,
+        }
+        return children, aux_data
+
+    @classmethod
+    def tree_unflatten(
+        cls, aux_data: dict[str, list], children: tuple["Module", ...]
+    ) -> Self:
+        modules = dict(zip(aux_data["module_keys"], children))
+        statics = dict(zip(aux_data["static_keys"], aux_data["statics"]))
+
+        modules = modules | statics
+        return cls(modules)
