@@ -135,7 +135,7 @@ class ModuleList(Module):
 
     @classmethod
     def tree_unflatten(
-        cls, aux_data: dict[str, list], children: tuple["Module", ...]
+        cls, aux_data: dict[str, list], children: tuple[Module, ...]
     ) -> Self:
         length = max(
             max(aux_data["module_keys"], default=-1),
@@ -182,7 +182,7 @@ class ModuleDict(Module):
 
     @classmethod
     def tree_unflatten(
-        cls, aux_data: dict[str, list], children: tuple["Module", ...]
+        cls, aux_data: dict[str, list], children: tuple[Module, ...]
     ) -> Self:
         modules = dict(zip(aux_data["module_keys"], children))
         statics = dict(zip(aux_data["static_keys"], aux_data["statics"]))
