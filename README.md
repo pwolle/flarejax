@@ -9,7 +9,7 @@ Simple pytree module classes for Jax, strongly inspired by [Equinox](https://git
 ## Installation
 Memmpy can be installed directly from PyPI using `pip`. It requires Python 3.10+ and Jax 0.4.26+.
 ```bash
-pip install noxjax
+pip install flarejax
 ```
 
 ## Quick Examples
