@@ -1,10 +1,10 @@
 # FlareJax
 Simple pytree module classes for Jax, strongly inspired by [Equinox](https://github.com/patrick-kidger/equinox)
 - Referential transparency via strict immutability
-- Easy manipulation using `.at` & `.set` syntax
+- Easy manipulation using `.at` & `.set`
 - Safe serialization including hyperparameters
 - Bound methods and function transformations are also modules
-- Auxillary information in key paths for filtering
+- Auxillary information in key paths for filtered transformations
 
 ## Installation
 Memmpy can be installed directly from PyPI using `pip`. It requires Python 3.10+ and Jax 0.4.26+.
