@@ -46,18 +46,18 @@ model = fj.Sequential(
 )
 ```
 
-Although modules are immutable, modified copies can be created using the `at` property
+Although modules are immutable, modified copies can be created using the `at` property.
 ```python
 w_new = jax.numpy.ones((2, 3))
 model = model.at[0].w.set(w_new)
 ```
 
-Turning train mode off for the first layer
+Turning train mode off for the first layer is only a simple call to `set`.
 ```python
 model = model.at[0].config["train"].set(False)
 ```
 
-The model can be serialized and deserialized using `fj.save` and `fj.load`
+The model can be serialized and deserialized using `fj.save` and `fj.load`.
 ```python
 fj.save("model.npz", model)
 model = fj.load("model.npz")
