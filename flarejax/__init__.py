@@ -1,26 +1,39 @@
-from ._layers import (
-    LayerNorm,
-    Linear,
+from ._config import ConfigMapping, ConfigSequence
+from ._frozen import FrozenMappingHashable, FrozenSequence
+from ._module import FieldKey, Module, field
+from ._mtypes import (
+    Jit,
+    ModuleMapping,
+    ModuleSequence,
+    Partial,
     Sequential,
-    init_he,
-    init_zeros,
-    layer_norm,
+    VMap,
 )
-from ._module import Module, ModuleList
-from ._param import Param
-from ._pytree import PyTreeWithKeys
+from ._serial import load_module, save_module
+
+__version__ = "0.2.0"
+
 
 __all__ = [
-    "LayerNorm",
-    "Linear",
-    "Sequential",
-    "init_he",
-    "init_zeros",
-    "layer_norm",
+    "ConfigMapping",
+    "ConfigSequence",
+    "FrozenMappingHashable",
+    "FrozenSequence",
     "Module",
-    "ModuleList",
-    "Param",
-    "PyTreeWithKeys",
+    "FieldKey",
+    "field",
+    "Jit",
+    "ModuleMapping",
+    "ModuleSequence",
+    "Partial",
+    "Sequential",
+    "VMap",
+    "load_module",
+    "save_module",
+    "__version__",
 ]
 
-__version__ = "0.1.0"
+
+from beartype.claw import beartype_this_package
+
+beartype_this_package()
