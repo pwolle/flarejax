@@ -16,7 +16,7 @@ setup(
     packages=find_packages(where="."),
     python_requires=">=3.10",
     install_requires=requirements,
-    description="Pytorch-like modules in Jax",
+    description="Pytree modules classes with easy manipulation and serialization ",
     long_description=long_description,
     long_description_content_type="text/markdown",
     url="https://github.com/pwolle/flarejax",
