@@ -69,7 +69,6 @@ class ModuleMapping(FrozenMapping[str, Module | Hashable], Module):
             name="_data",
             hint=type(self),
             grad=True,
-            leaf=False,
             attr=False,
             meta=FrozenMappingHashable({}),
             conf=self.config,
@@ -78,7 +77,7 @@ class ModuleMapping(FrozenMapping[str, Module | Hashable], Module):
 
     @classmethod
     def tree_unflatten(
-        cls: type[Self],
+        cls,
         static: Mapping,
         active: Mapping,
     ) -> Self:
@@ -132,7 +131,6 @@ class ModuleSequence(FrozenSequence[Module | Hashable], Module):
             name="_data",
             hint=type(self),
             grad=True,
-            leaf=False,
             attr=False,
             meta=FrozenMappingHashable({}),
             conf=self.config,
@@ -141,7 +139,7 @@ class ModuleSequence(FrozenSequence[Module | Hashable], Module):
 
     @classmethod
     def tree_unflatten(
-        cls: type[Self],
+        cls,
         static: list[Hashable],
         active: tuple[list[Module]],
     ) -> Self:
@@ -221,8 +219,8 @@ class VMap(Module):
     """
 
     module: Module
-    in_axes: int | None = field(leaf=False, default=0)
-    out_axes: int | None = field(leaf=False, default=0)
+    in_axes: int | None = field(default=0)
+    out_axes: int | None = field(default=0)
 
     def __post_init__(self: Self) -> None:
         if not callable(self.module):
@@ -256,11 +254,11 @@ class Partial(Module):
     """
 
     module: Module
-    args: ModuleSequence = field(leaf=False, default=ModuleSequence([]))
-    kwargs: ModuleMapping = field(leaf=False, default=ModuleMapping({}))
+    args: ModuleSequence = field(default=ModuleSequence([]))
+    kwargs: ModuleMapping = field(default=ModuleMapping({}))
 
     @classmethod
-    def init(cls: type[Self], module, *args, **kwargs):
+    def init(cls, module: Module, *args, **kwargs) -> Self:
         return cls(
             module=module,
             args=ModuleSequence(args),

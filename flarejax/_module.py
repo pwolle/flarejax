@@ -12,6 +12,7 @@ from typing import (
     dataclass_transform,
 )
 
+import jax
 import jax.tree_util as jtu
 
 from ._config import ConfigMapping
@@ -76,7 +77,6 @@ def get_module_name(cls: type) -> str:
 def field(
     *,
     grad: bool = True,
-    leaf: bool = True,
     meta: Mapping | None = None,
     **field_kwargs,
 ) -> Any:
@@ -89,9 +89,6 @@ def field(
 
     assert "grad" not in meta, "'grad' is a reserved metadata key"
     meta["grad"] = grad
-
-    assert "leaf" not in meta, "'leaf' is a reserved metadata key"
-    meta["leaf"] = leaf
 
     return dataclasses.field(
         metadata=FrozenMappingHashable(meta),  # type: ignore
@@ -116,12 +113,12 @@ class FrozenDataclassMeta(abc.ABCMeta, type):
     """
 
     def __new__(
-        cls: type["FrozenDataclassMeta"],
+        cls,
         name: str,
         bases: tuple[type, ...],
         attrs: dict[str, Any],
         **kwargs: Any,
-    ) -> type["FrozenDataclassMeta"]:
+    ):
         """
         Convert the given class into a frozen dataclass.
         """
@@ -169,7 +166,7 @@ class FrozenDataclassMeta(abc.ABCMeta, type):
         return cls_new
 
     def __init__(
-        cls: type["FrozenDataclassMeta"],
+        cls,
         name: str,
         bases: tuple[type, ...],
         attrs: dict[str, Any],
@@ -196,9 +193,6 @@ class FieldKey:
         Whether the field should be included when differentiating with respect
         to the dataclass instance.
 
-    leaf: bool
-        Whether the field is a leaf node in the PyTree structure.
-
     meta: FrozenMappingHashable[Hashable, Hashable]
         Additional metadata about the field.
 
@@ -209,7 +203,6 @@ class FieldKey:
     name: str
     hint: type
     grad: bool
-    leaf: bool
     attr: bool = True
     meta: FrozenMappingHashable = dataclasses.field(
         repr=False,
@@ -237,7 +230,6 @@ class FieldKey:
                 self.name,
                 self.hint,
                 self.grad,
-                self.leaf,
                 tuple(meta_unfolded),
                 tuple(conf_unfolded),
             )
@@ -266,7 +258,7 @@ class FrozenDataclassBase(metaclass=FrozenDataclassMeta, register=False):
 
     @classmethod
     @abc.abstractmethod
-    def tree_unflatten(cls: type[Self], aux_data, children) -> Self:
+    def tree_unflatten(cls, aux_data, children) -> Self:
         """
         Unflatten the PyTree node from a tuple of children and aux data.
         """
@@ -291,7 +283,6 @@ def sorted_fields(cls: type) -> list[dataclasses.Field]:
 
 class Module(FrozenDataclassBase, register=False):
     config: ConfigMapping = field(
-        leaf=False,
         repr=False,
         default_factory=lambda: ConfigMapping({"train": True}),
     )
@@ -324,19 +315,14 @@ class Module(FrozenDataclassBase, register=False):
         for field_ in sorted_fields(type(self)):
             value = getattr(self, field_.name)
 
-            if field_.metadata.get("leaf", True):
-                meta = dict(field_.metadata)
-
-                grad = meta.pop("grad", True)
-                leaf = meta.pop("leaf", True)
-
-                meta = FrozenMappingHashable(meta)
+            if isinstance(value, (Module, jax.Array)):
+                meta = FrozenMappingHashable(field_.metadata)
+                meta, grad = meta.pop("grad")
 
                 key = FieldKey(
                     name=field_.name,
                     hint=field_.type,
                     grad=grad,
-                    leaf=leaf,
                     attr=True,
                     meta=meta,
                     conf=self.config,
@@ -350,7 +336,7 @@ class Module(FrozenDataclassBase, register=False):
 
     @classmethod
     def tree_unflatten(
-        cls: type[Self], static: tuple[Hashable, ...], active: tuple[Any, ...]
+        cls, static: tuple[Hashable, ...], active: tuple[Any, ...]
     ) -> Self:
         """
         Unflatten the PyTree node from a tuple of children and aux data.
@@ -375,14 +361,8 @@ EMPTY = object()
 
 class AtWrapper(Module):
     _at_module: Module
-    _at_adress: tuple[Any | str, ...] = field(
-        leaf=False,
-        default=(),
-    )
-    _at_lookup: tuple[Literal["attr", "item"], ...] = field(
-        leaf=False,
-        default=(),
-    )
+    _at_adress: tuple[Any | str, ...] = field(default=())
+    _at_lookup: tuple[Literal["attr", "item"], ...] = field(default=())
 
     def __post_init__(self: Self) -> None:
         if len(self._at_adress) != len(self._at_lookup):
@@ -454,10 +434,10 @@ class AtWrapper(Module):
 
 class BoundMethod(Module):
     module: Module
-    method: Callable = field(leaf=False)
+    method: str
 
     @classmethod
-    def init(cls: type[Self], module_method) -> Self:
+    def init(cls, module_method) -> Self:
         if not hasattr(module_method, "__self__"):
             error = f"Method {module_method} is not bound to a module."
             raise ValueError(error)
@@ -472,11 +452,9 @@ class BoundMethod(Module):
             error = f"Object {module} is not a Module."
             raise ValueError(error)
 
-        method = getattr(type(module), module_method.__name__)
-
         return cls(
             module=module,
-            method=method,
+            method=module_method.__name__,
         )
 
     # maintain compatibility with the original python bound method type
@@ -485,7 +463,8 @@ class BoundMethod(Module):
         return self.module
 
     def __call__(self: Self, *args, **kwargs):
-        return self.method(self.module, *args, **kwargs)
+        method = getattr(type(self.module), self.method)
+        return method(self.module, *args, **kwargs)
 
 
 @dataclasses.dataclass(frozen=True)
