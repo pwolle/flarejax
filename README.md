@@ -28,7 +28,7 @@ class Linear(fj.Module):
     # additional intialization methods via classmethods
     @classmethod
     def init(cls, key, dim_in, dim):
-        w = jax.random.normal(key, (dim, dim_in))
+        w = jax.random.normal(key, (dim, dim_in)) * 0.02
         b = jax.numpy.zeros((dim,))
         return cls(w=w, b=b)
 
