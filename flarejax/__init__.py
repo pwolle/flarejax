@@ -15,7 +15,7 @@ from ._mtypes import (
 )
 from ._serial import load_module, save_module
 
-__version__ = "0.2.1"
+__version__ = "0.2.3"
 
 
 __all__ = [
