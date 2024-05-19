@@ -6,11 +6,6 @@ Simple pytree module classes for Jax, strongly inspired by [Equinox](https://git
 - Bound methods and function transformations are also modules
 - Auxillary information in key paths for filtered transformations
 
-## Installation
-Memmpy can be installed directly from PyPI using `pip`. It requires Python 3.10+ and Jax 0.4.26+.
-```bash
-pip install flarejax
-```
 
 ## Quick Examples
 Modules work similar to dataclasses, but with the added benefit of being pytrees. Making them compatible with all Jax function transformations.
@@ -22,8 +17,8 @@ class Linear(fj.Module):
     w: jax.Array
     b: jax.Array
 
-    # Non-pytree fields are marked with leaf=True
-    aux: None = fj.field(leaf=False, default=None)
+    # only jax arrays and modules are considered pytree leaves
+    aux: None = None
 
     # additional intialization methods via classmethods
     @classmethod
@@ -52,11 +47,6 @@ w_new = jax.numpy.ones((2, 3))
 model = model.at[0].w.set(w_new)
 ```
 
-Turning train mode off for the first layer is only a simple call to `set`.
-```python
-model = model.at[0].config["train"].set(False)
-```
-
 The model can be serialized and deserialized using `fj.save` and `fj.load`.
 ```python
 fj.save("model.npz", model)
@@ -69,9 +59,23 @@ model = fj.VMap(model)
 model = fj.Jit(model)
 ```
 
-## Roadmap
-- [x] Filtered transformations based on key paths
+## Installation
+Memmpy can be installed directly from PyPI using `pip`. It requires Python 3.10+ and Jax 0.4.26+.
+```bash
+pip install flarejax
+```
 
+## Design
+Flarejax modules sacrifice some flexibility for the sake of a unified interface and safety. Flarejax code should alway be easy to reason about and should not contain any footguns from using python magic.
+1. Everything is immutable and 
+2. module fields can be either jax arrays, other modules or json-like data.
+
+This makes it harder to use other jax libraries in flarejax modules. It is recommended to wrap the needed functionality in a module.
+Most jax libraries should be compatible with flarejax modules, since they are simply callable pytrees.
+
+## Roadmap
+- [ ] Filtered grad transformation based on key paths
+- [ ] Pretty printing for modules
 
 ## See also
 - The beautiful [Equinox](https://github.com/patrick-kidger/equinox) library

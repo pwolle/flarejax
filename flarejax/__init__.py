@@ -1,9 +1,5 @@
-from beartype.claw import beartype_this_package
-
-beartype_this_package()
-
 from ._config import ConfigMapping, ConfigSequence
-from ._frozen import FrozenMappingHashable, FrozenSequence
+from ._frozen import FrozenMapping, FrozenMappingHashable, FrozenSequence
 from ._module import FieldKey, Module, field
 from ._mtypes import (
     Jit,
@@ -14,6 +10,7 @@ from ._mtypes import (
     VMap,
 )
 from ._serial import load_module, save_module
+from ._typecheck import typecheck
 
 __version__ = "0.2.3"
 
@@ -21,6 +18,7 @@ __version__ = "0.2.3"
 __all__ = [
     "ConfigMapping",
     "ConfigSequence",
+    "FrozenMapping",
     "FrozenMappingHashable",
     "FrozenSequence",
     "Module",
@@ -34,5 +32,6 @@ __all__ = [
     "VMap",
     "load_module",
     "save_module",
+    "typecheck",
     "__version__",
 ]

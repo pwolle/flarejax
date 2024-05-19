@@ -1,12 +1,12 @@
-import dataclasses
 import functools
-from typing import Callable, Hashable, Mapping, Self
+from typing import Any, Callable, Generic, Self, TypeVar
 
 import jax
 
-from ._config import ConfigMapping, valid_conifg_types
-from ._frozen import FrozenMapping, FrozenMappingHashable, FrozenSequence
-from ._module import FieldKey, Module, field
+from ._config import ConfigMapping, ConfigSequence, coerce_config_type
+from ._frozen import FrozenMapping, FrozenSequence
+from ._module import FieldKey, Module, field, is_leaf
+from ._typecheck import typecheck
 
 __all__ = [
     "ModuleMapping",
@@ -17,149 +17,154 @@ __all__ = [
     "Partial",
 ]
 
+M = TypeVar("M")
 
-class ModuleMapping(FrozenMapping[str, Module | Hashable], Module):
+
+@typecheck
+class ModuleMapping(FrozenMapping[str, M], Module, Generic[M]):
     def __post_init__(self: Self) -> None:
+        _data = dict(self._data)
+
+        for k, v in _data.items():
+            if is_leaf(v):
+                continue
+
+            _data[k] = coerce_config_type(v)  # type: ignore
+
+        object.__setattr__(self, "_data", _data)
         super().__post_init__()
 
-        if not all(isinstance(key, str) for key in self):
-            error = "Keys mus be valid strings."
-            raise TypeError(error)
+        if "_leaves" in self:
+            error = "Key '_leaves' is reserved for internal use."
+            raise ValueError(error)
 
-        for key, value in self.items():
-            if isinstance(value, (Module, jax.Array)):
-                continue
-
-            if valid_conifg_types(value):
-                continue
-
-            error = (
-                f"'{self.__class__.__name__}' values must be Modules, jax"
-                f"arrays or config tyes, but got '{value}' for key '{key}'."
-            )
-            raise TypeError(error)
+        for k, v in self.items():
+            if not isinstance(k, str):
+                error = f"All keys must be strings, got {k}"
+                raise TypeError(error)
 
     def __repr__(self: Self) -> str:
         return f"{self.__class__.__name__}({dict(self._data)})"
 
-    def __frozen_set_item__(self: Self, key: Hashable, value: Module) -> Self:
-        return dataclasses.replace(self, _data={**self._data, key: value})
-
-    def __frozen_del_item__(self: Self, key: str) -> Self:
-        data = dict(self._data)
-        del data[key]
-        return dataclasses.replace(self, _data=data)
-
     def tree_flatten_with_keys(
         self: Self,
-    ) -> tuple[
-        tuple[tuple[FieldKey, dict[Hashable, Module]]],
-        ConfigMapping,
-    ]:
-        active = {}
-        static = {}
+    ) -> tuple[tuple[tuple[FieldKey, Any], ...], ConfigMapping]:
+        items_active = []
+        items_static = {}
 
-        for key, value in self.items():
-            if isinstance(value, (Module, jax.Array)):
-                active[key] = value
-            else:
-                static[key] = value
+        keys_leaves = []
+        keys_module = sorted(self.keys())
 
-        active_key = FieldKey(
-            name="_data",
-            hint=type(self),
-            grad=True,
-            attr=False,
-            meta=FrozenMappingHashable({}),
-            conf=self.config,
-        )
-        return ((active_key, active),), ConfigMapping(static)
+        for module_key in keys_module:
+            value = self[module_key]
+
+            if is_leaf(value):
+                keys_leaves.append(module_key)
+                continue
+
+            items_static[module_key] = value
+
+        items_static["_leaves"] = ConfigSequence(keys_leaves)
+        items_static = ConfigMapping(items_static)
+
+        for module_key in keys_leaves:
+            value = self[module_key]
+            assert is_leaf(value)
+
+            tree_key = FieldKey(
+                name=module_key,
+                type=type(self),
+                tree=items_static,
+            )
+            items_active.append((tree_key, value))
+
+        return tuple(items_active), items_static
 
     @classmethod
     def tree_unflatten(
         cls,
-        static: Mapping,
-        active: Mapping,
+        static: ConfigMapping,
+        active: tuple[M, ...],
     ) -> Self:
-        print(static, active)
-        return cls({**static, **active[0]})
+        static, leaves = static.pop("_leaves")
+
+        active_items: dict[str, M] = {}
+        assert isinstance(leaves, ConfigSequence)
+
+        for i, k in enumerate(leaves):
+            active_items[k] = active[i]
+
+        return cls({**active_items, **static})
 
 
-class ModuleSequence(FrozenSequence[Module | Hashable], Module):
+@typecheck
+class ModuleSequence(FrozenSequence[M], Module, Generic[M]):
     def __post_init__(self: Self) -> None:
+        _data = list(self._data)
+
+        for i, v in enumerate(_data):
+            if is_leaf(v):
+                continue
+
+            _data[i] = coerce_config_type(v)  # type: ignore
+
+        object.__setattr__(self, "_data", _data)
         super().__post_init__()
-
-        for value in self:
-            if isinstance(value, (Module, jax.Array)):
-                continue
-
-            if valid_conifg_types(value):
-                continue
-
-            error = (
-                f"'{self.__class__.__name__}' values must be Modules, jax"
-                f"arrays or config tyes, but got '{value}'."
-            )
-            raise TypeError(error)
 
     def __repr__(self: Self) -> str:
         return f"{self.__class__.__name__}({list(self._data)})"
 
-    def __frozen_set_item__(self: Self, key: int, value: Module) -> Self:
-        data = list(self._data)
-        data[key] = value
-        return dataclasses.replace(self, _data=data)
-
-    def __frozen_del_item__(self: Self, key: int) -> Self:
-        data = list(self._data)
-        del data[key]
-        return dataclasses.replace(self, _data=data)
-
     def tree_flatten_with_keys(
         self: Self,
-    ) -> tuple[tuple[tuple[FieldKey, list[Module]]], ConfigMapping]:
-        active = []
-        static = {}
+    ) -> tuple[tuple[tuple[FieldKey, Module], ...], ConfigMapping]:
+        items_active = []
+        items_static = {}
 
-        for i, value in enumerate(self):
-            if isinstance(value, (Module, jax.Array)):
-                active.append(value)
-            else:
-                static[i] = value
+        for i, v in enumerate(self):
+            if is_leaf(v):
+                continue
 
-        active_key = FieldKey(
-            name="_data",
-            hint=type(self),
-            grad=True,
-            attr=False,
-            meta=FrozenMappingHashable({}),
-            conf=self.config,
-        )
-        return ((active_key, active),), ConfigMapping(static)
+            items_static[str(i)] = v
+
+        items_static = ConfigMapping(items_static)
+
+        for v in self:
+            if not is_leaf(v):
+                continue
+
+            key = FieldKey(
+                name="_data",
+                type=type(self),
+                tree=items_static,
+            )
+            items_active.append((key, v))
+
+        return tuple(items_active), items_static
 
     @classmethod
     def tree_unflatten(
         cls,
-        static: list[Hashable],
-        active: tuple[list[Module]],
+        static: ConfigMapping,
+        active: tuple[M, ...],
     ) -> Self:
         active_index = 0
-        static_index = 0
         values = []
 
-        for i in range(len(static) + len(active[0])):
+        for i in range(len(static) + len(active)):
+            i = str(i)
+
             if i in static:
-                values.append(static[static_index])
-                static_index += 1
+                values.append(static[i])
 
             else:
-                values.append(active[0][active_index])
+                values.append(active[active_index])
                 active_index += 1
 
         return cls(values)
 
 
-class Sequential(ModuleSequence):
+@typecheck
+class Sequential(ModuleSequence[M], Generic[M]):
     def __post_init__(self: Self) -> None:
         super().__post_init__()
 
@@ -180,6 +185,7 @@ def _jit_apply_layer(layer, *args, **kwargs):
     return layer(*args, **kwargs)
 
 
+@typecheck
 class Jit(Module):
     """
     Wrap a module into a Jitted module, that can be used in Jax transformations.
@@ -201,6 +207,7 @@ class Jit(Module):
         return _jit_apply_layer(self.module, *args, **kwargs)
 
 
+@typecheck
 class VMap(Module):
     """
     A wrapper of 'jax.vmap', that returns a module, such that is compatible with
@@ -236,6 +243,7 @@ class VMap(Module):
         )(*args, **kwargs)
 
 
+@typecheck
 class Partial(Module):
     """
     A wrapper of 'functools.partial', that returns a module, such that is compatible

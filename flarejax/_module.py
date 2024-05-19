@@ -6,7 +6,6 @@ from typing import (
     Any,
     Callable,
     Hashable,
-    Literal,
     Mapping,
     Self,
     dataclass_transform,
@@ -15,8 +14,10 @@ from typing import (
 import jax
 import jax.tree_util as jtu
 
-from ._config import ConfigMapping
+from ._config import ConfigMapping, ConfigSequence, coerce_config_type
 from ._frozen import FrozenMappingHashable
+from ._modify import AtWrapper
+from ._typecheck import typecheck
 
 __all__ = [
     "GLOBAL_MODULE_REGISTRY",
@@ -26,6 +27,7 @@ __all__ = [
     "FieldKey",
     "Module",
     "AtWrapper",
+    "is_leaf",
 ]
 
 # Global module registry to store all registered modules.
@@ -40,6 +42,7 @@ GLOBAL_MODULE_REGISTRY = {
 }
 
 
+@typecheck
 def get_module_name(cls: type) -> str:
     """
     Get the name of a given module class. This is the class name by default,
@@ -74,6 +77,7 @@ def get_module_name(cls: type) -> str:
     return cls.__name__
 
 
+@typecheck
 def field(
     *,
     grad: bool = True,
@@ -96,11 +100,8 @@ def field(
     )
 
 
-@dataclass_transform(
-    frozen_default=True,
-    kw_only_default=True,
-    order_default=False,
-)
+@typecheck
+@dataclass_transform(frozen_default=True)
 class FrozenDataclassMeta(abc.ABCMeta, type):
     """
     This metaclass makes all its subclasses frozen dataclasses and registers
@@ -122,6 +123,8 @@ class FrozenDataclassMeta(abc.ABCMeta, type):
         """
         Convert the given class into a frozen dataclass.
         """
+        # Make bound methods modules. however, exclude the base classes, as they
+        # are defined before the BoundMethod Module is defined.
         if name not in {
             "FrozenDataclassBase",
             "Module",
@@ -144,11 +147,7 @@ class FrozenDataclassMeta(abc.ABCMeta, type):
                 attrs[key] = BoundMethodWrap(value)
 
         cls_new = super().__new__(cls, name, bases, attrs)
-        cls_new = dataclasses.dataclass(
-            frozen=True,
-            kw_only=True,
-            order=False,
-        )(cls_new)
+        cls_new = dataclasses.dataclass(frozen=True)(cls_new)
 
         if kwargs.get("register", True):
             module_name = get_module_name(cls_new)
@@ -176,6 +175,7 @@ class FrozenDataclassMeta(abc.ABCMeta, type):
         jtu.register_pytree_with_keys_class(cls)
 
 
+@typecheck
 @dataclasses.dataclass(frozen=True)
 class FieldKey:
     """
@@ -183,62 +183,25 @@ class FieldKey:
 
     Attributes:
     ---
-    name: str
-        The name of the field.
-
-    hint: type
-        The type hint of the field.
-
-    grad: bool
-        Whether the field should be included when differentiating with respect
-        to the dataclass instance.
-
-    meta: FrozenMappingHashable[Hashable, Hashable]
-        Additional metadata about the field.
-
-    conf: FrozenMappingHashable[str | int, str | int | bool]
-        Configuration options of the parent Module
+    TODO
     """
 
-    name: str
-    hint: type
-    grad: bool
-    attr: bool = True
-    meta: FrozenMappingHashable = dataclasses.field(
-        repr=False,
-        default_factory=lambda: FrozenMappingHashable({}),
-    )
-    conf: FrozenMappingHashable = dataclasses.field(
-        repr=False,
-        default_factory=lambda: FrozenMappingHashable({}),
-    )
+    name: str  # name of the field
+    type: type  # type of parent module
+    tree: ConfigMapping | ConfigSequence = ConfigMapping()  # static part
+    hint: FrozenMappingHashable = FrozenMappingHashable()  # metadata
 
     # cache the hash value since it is O(n) to compute and it will not change,
     # because the object is immutable
     @functools.cached_property
     def _hash(self) -> int:
-        meta_unfolded = []
-        for key in sorted(self.meta, key=hash):
-            meta_unfolded.append((key, self.meta[key]))
-
-        conf_unfolded = []
-        for key in sorted(self.conf, key=hash):
-            conf_unfolded.append((key, self.conf[key]))
-
-        return hash(
-            (
-                self.name,
-                self.hint,
-                self.grad,
-                tuple(meta_unfolded),
-                tuple(conf_unfolded),
-            )
-        )
+        return hash((self.name, self.tree, self.hint))
 
     def __hash__(self) -> int:
         return self._hash
 
 
+@typecheck
 class FrozenDataclassBase(metaclass=FrozenDataclassMeta, register=False):
     """
     Abstract base class for creating frozen dataclasses with support for the Jax
@@ -249,7 +212,9 @@ class FrozenDataclassBase(metaclass=FrozenDataclassMeta, register=False):
     """
 
     @abc.abstractmethod
-    def tree_flatten_with_keys(self: Self):
+    def tree_flatten_with_keys(
+        self: Self,
+    ) -> tuple[tuple[tuple[FieldKey, Any], ...], ConfigMapping]:
         """
         Flatten the PyTree node into a tuple of children and aux data.
         """
@@ -258,7 +223,11 @@ class FrozenDataclassBase(metaclass=FrozenDataclassMeta, register=False):
 
     @classmethod
     @abc.abstractmethod
-    def tree_unflatten(cls, aux_data, children) -> Self:
+    def tree_unflatten(
+        cls,
+        aux_data: ConfigMapping | ConfigSequence,
+        children: tuple[Any, ...],
+    ) -> Self:
         """
         Unflatten the PyTree node from a tuple of children and aux data.
         """
@@ -266,6 +235,7 @@ class FrozenDataclassBase(metaclass=FrozenDataclassMeta, register=False):
         raise NotImplementedError(error)
 
 
+@typecheck
 @functools.cache
 def sorted_fields(cls: type) -> list[dataclasses.Field]:
     if not inspect.isclass(cls):
@@ -281,20 +251,31 @@ def sorted_fields(cls: type) -> list[dataclasses.Field]:
     return fields
 
 
+@typecheck
+def is_leaf(value: Any) -> bool:
+    return isinstance(value, (Module, jax.Array))
+
+
+@typecheck
 class Module(FrozenDataclassBase, register=False):
-    config: ConfigMapping = field(
-        repr=False,
-        default_factory=lambda: ConfigMapping({"train": True}),
-    )
+    def __post_init__(self: Self) -> None:
+        for f in dataclasses.fields(type(self)):
+            value = getattr(self, f.name)
 
-    def __frozen_set_attr__(self: Self, adress: str, value: Any) -> Self:
-        return dataclasses.replace(self, **{adress: value})
+            if is_leaf(value):
+                continue
 
-    def __frozen_set_item__(self: Self, adress: Any, value: Any) -> Any:
+            value = coerce_config_type(value)
+            object.__setattr__(self, f.name, value)
+
+    def __frozen_set_attr__(self: Self, k: str, v: Any, /) -> Self:
+        return dataclasses.replace(self, **{k: v})
+
+    def __frozen_set_item__(self: Self, k: Any, v: Any, /) -> Any:
         error = f"Setting items is not supported for '{type(self)}'"
         raise NotImplementedError(error)
 
-    def __frozen_del_item__(self: Self, adress: Any) -> Any:
+    def __frozen_del_item__(self: Self, k: Any, /) -> Any:
         error = f"Deleting items is not supported for '{type(self)}'"
         raise NotImplementedError(error)
 
@@ -304,134 +285,66 @@ class Module(FrozenDataclassBase, register=False):
 
     def tree_flatten_with_keys(
         self: Self,
-    ) -> tuple[tuple[tuple[FieldKey, Any], ...], tuple[Hashable, ...]]:
+    ) -> tuple[tuple[tuple[FieldKey, Any], ...], ConfigMapping]:
         """
         Flatten the PyTree node into a tuple of the leaves with field keys and
         a tuple with all of the non-leaf fields.
         """
-        active = []
-        static = []
+        fields_static = []
+        fields_active = []
 
         for field_ in sorted_fields(type(self)):
             value = getattr(self, field_.name)
 
-            if isinstance(value, (Module, jax.Array)):
-                meta = FrozenMappingHashable(field_.metadata)
-                meta, grad = meta.pop("grad")
-
-                key = FieldKey(
-                    name=field_.name,
-                    hint=field_.type,
-                    grad=grad,
-                    attr=True,
-                    meta=meta,
-                    conf=self.config,
-                )
-                active.append((key, value))
-
+            if is_leaf(value):
+                fields_active.append(field_)
             else:
-                static.append(value)
+                fields_static.append(field_)
 
-        return tuple(active), tuple(static)
+        static = {}
+        for field_ in fields_static:
+            static[field_.name] = getattr(self, field_.name)
+
+        static = ConfigMapping(static)
+
+        active = []
+        for field_ in fields_active:
+            value = getattr(self, field_.name)
+
+            key = FieldKey(
+                name=field_.name,
+                type=type(self),
+                tree=static,
+                hint=FrozenMappingHashable(field_.metadata),
+            )
+            active.append((key, value))
+
+        return tuple(active), static
 
     @classmethod
     def tree_unflatten(
-        cls, static: tuple[Hashable, ...], active: tuple[Any, ...]
+        cls,
+        static: ConfigMapping,
+        active: tuple[Any, ...],
     ) -> Self:
         """
         Unflatten the PyTree node from a tuple of children and aux data.
         """
         kwargs = {}
-        active_index = 0
-        static_index = 0
+        i = 0
 
         for field_ in sorted_fields(cls):
-            if field_.metadata.get("leaf", True):
-                kwargs[field_.name] = active[active_index]
-                active_index += 1
+            if field_.name in static:
+                kwargs[field_.name] = static[field_.name]
+
             else:
-                kwargs[field_.name] = static[static_index]
-                static_index += 1
+                kwargs[field_.name] = active[i]
+                i += 1
 
         return cls(**kwargs)
 
 
-EMPTY = object()
-
-
-class AtWrapper(Module):
-    _at_module: Module
-    _at_adress: tuple[Any | str, ...] = field(default=())
-    _at_lookup: tuple[Literal["attr", "item"], ...] = field(default=())
-
-    def __post_init__(self: Self) -> None:
-        if len(self._at_adress) != len(self._at_lookup):
-            error = "Adress and lookup must have the same length."
-            raise ValueError(error)
-
-        if not all(lookup in ("attr", "item") for lookup in self._at_lookup):
-            error = "Lookup must be either 'attr' or 'item'."
-            raise ValueError(error)
-
-    def __getattr__(self: Self, k: str) -> Self:
-        return dataclasses.replace(
-            self,
-            _at_adress=self._at_adress + (k,),
-            _at_lookup=self._at_lookup + ("attr",),
-        )
-
-    def __getitem__(self: Self, k: Any) -> Self:
-        return dataclasses.replace(
-            self,
-            _at_adress=self._at_adress + (k,),
-            _at_lookup=self._at_lookup + ("item",),
-        )
-
-    def set(self: Self, updated: Any) -> Module:
-        values = [self._at_module]
-
-        for adress, lookup in zip(
-            self._at_adress[:-1],
-            self._at_lookup[:-1],
-            strict=True,
-        ):
-            if lookup == "attr":
-                value = getattr(values[-1], adress)
-                values.append(value)
-                continue
-
-            if lookup == "item":
-                value = values[-1][adress]  # type: ignore
-                values.append(value)
-                continue
-
-            error = f"Invalid lookup '{lookup}'."
-            raise ValueError(error)
-
-        for adress, value, lookup in zip(
-            reversed(self._at_adress),
-            reversed(values),
-            reversed(self._at_lookup),
-            strict=True,
-        ):
-            if lookup == "attr":
-                updated = value.__frozen_set_attr__(adress, updated)
-                continue
-
-            if lookup == "item":
-                if updated is EMPTY:
-                    updated = value.__frozen_del_item__(adress)
-                    continue
-
-                updated = value.__frozen_set_item__(adress, updated)
-                continue
-
-            error = f"Invalid lookup '{lookup}'."
-            raise ValueError(error)
-
-        return updated
-
-
+@typecheck
 class BoundMethod(Module):
     module: Module
     method: str
@@ -467,6 +380,7 @@ class BoundMethod(Module):
         return method(self.module, *args, **kwargs)
 
 
+@typecheck
 @dataclasses.dataclass(frozen=True)
 class BoundMethodWrap:
     method: Callable

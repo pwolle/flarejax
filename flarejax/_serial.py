@@ -6,6 +6,7 @@ import jax.tree_util as jtu
 
 from ._config import ConfigEncoder, ConfigDecoder
 from ._module import GLOBAL_MODULE_REGISTRY, Module, get_module_name
+from ._typecheck import typecheck
 
 __all__ = [
     "save_module",
@@ -13,6 +14,7 @@ __all__ = [
 ]
 
 
+@typecheck
 def treedef_to_dict(treedef, /) -> dict[str, Any] | None:
     """
     Convert a PyTree tree definition into a nested dictionary.
@@ -34,6 +36,7 @@ def treedef_to_dict(treedef, /) -> dict[str, Any] | None:
     }
 
 
+@typecheck
 def dict_to_treedef(data, /) -> jtu.PyTreeDef:
     """
     Convert a nested dictionary created by 'treedef_to_dict' back into a PyTree.
@@ -56,6 +59,7 @@ def dict_to_treedef(data, /) -> jtu.PyTreeDef:
     )
 
 
+@typecheck
 def save_module(path: str, tree: Module | list | dict | tuple | None) -> None:
     """
     Save a module to disk.
@@ -76,6 +80,7 @@ def save_module(path: str, tree: Module | list | dict | tuple | None) -> None:
     jnp.savez(path, **arrays)
 
 
+@typecheck
 def load_module(path: str) -> Module | list | dict | tuple | None:
     """
     Load a module from disk, which was saved using the 'save_module' function.
