@@ -10,13 +10,18 @@ with open("requirements.txt") as f:
     requirements = f.read().splitlines()
 
 
+description = (
+    "Immutable pytree modules classes with easy manipulation and serialization"
+)
+
+
 setup(
     name="flarejax",
     version=__version__,
     packages=find_packages(where="."),
     python_requires=">=3.10",
     install_requires=requirements,
-    description="Pytree modules classes with easy manipulation and serialization",
+    description=description,
     long_description=long_description,
     long_description_content_type="text/markdown",
     url="https://github.com/pwolle/flarejax",
