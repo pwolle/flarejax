@@ -12,7 +12,7 @@ from ._mtypes import (
 from ._serial import load_module, save_module
 from ._typecheck import typecheck
 
-__version__ = "0.2.3"
+__version__ = "0.2.4"
 
 
 __all__ = [
