@@ -1,21 +1,25 @@
 import json
-from typing import Any
+from types import MappingProxyType
+from typing import Any, Mapping, Self
 
+import jax
 import jax.numpy as jnp
 import jax.tree_util as jtu
+import numpy as onp
 
-from ._config import ConfigEncoder, ConfigDecoder
-from ._module import GLOBAL_MODULE_REGISTRY, Module, get_module_name
+from ._module import Module, get_module_name
+from ._trees import MODULE_REGISTRY
 from ._typecheck import typecheck
 
+
 __all__ = [
-    "save_module",
-    "load_module",
+    "save",
+    "load",
 ]
 
 
 @typecheck
-def treedef_to_dict(treedef, /) -> dict[str, Any] | None:
+def _treedef_to_dict(treedef, /) -> dict[str, Any] | None:
     """
     Convert a PyTree tree definition into a nested dictionary.
     """
@@ -25,19 +29,19 @@ def treedef_to_dict(treedef, /) -> dict[str, Any] | None:
     node_data = treedef.node_data()
     name = get_module_name(node_data[0])
 
-    if name not in GLOBAL_MODULE_REGISTRY:
-        error = f"Module with name '{name}' is not registered."
+    if name not in MODULE_REGISTRY:
+        error = f"Module '{node_data[0]}' is not registered."
         raise ValueError(error)
 
     return {
         "__module_name": name,
         "aux_data": node_data[1],
-        "children": [treedef_to_dict(child) for child in treedef.children()],
+        "children": [_treedef_to_dict(child) for child in treedef.children()],
     }
 
 
 @typecheck
-def dict_to_treedef(data, /) -> jtu.PyTreeDef:
+def _dict_to_treedef(data: Mapping | None, /) -> jtu.PyTreeDef:
     """
     Convert a nested dictionary created by 'treedef_to_dict' back into a PyTree.
     """
@@ -46,61 +50,98 @@ def dict_to_treedef(data, /) -> jtu.PyTreeDef:
             jtu.default_registry, None, []
         )
 
-    if data["__module_name"] not in GLOBAL_MODULE_REGISTRY:
+    if data["__module_name"] not in MODULE_REGISTRY:
         error = f"Module with name '{data['__module_name']}' is not registered."
         raise ValueError(error)
 
-    cls = GLOBAL_MODULE_REGISTRY[data["__module_name"]]
+    cls = MODULE_REGISTRY[data["__module_name"]]
 
     return jtu.PyTreeDef.make_from_node_data_and_children(
         jtu.default_registry,
         (cls, data["aux_data"]),
-        (dict_to_treedef(child) for child in data["children"]),
+        (_dict_to_treedef(child) for child in data["children"]),
     )
 
 
 @typecheck
-def save_module(path: str, tree: Module | list | dict | tuple | None) -> None:
-    """
-    Save a module to disk.
-    This is done by fist flattening the module using the PyTree API, then the
-    leaves are saved to disk as numpy arrays and the tree structure is
-    serialized to JSON and also saved in the same zip archive.
-    """
+def _ismapping(obj: Any) -> bool:
+    try:
+        _ = (lambda **kwargs: kwargs)(**obj)  # type: ignore
+        return True
+    except TypeError:
+        return False
+
+
+@typecheck
+def _issequence(obj: Any) -> bool:
+    try:
+        _ = (lambda *args: args)(*obj)  # type: ignore
+        return True
+    except TypeError:
+        return False
+
+
+@typecheck
+class ConfigEncoder(json.JSONEncoder):
+    def default(self: Self, obj) -> dict[str, Any] | list[Any] | Any:
+        if _ismapping(obj):
+            return dict(obj)
+
+        if _issequence(obj):
+            return list(obj)
+
+        return super().default(obj)
+
+
+@typecheck
+def save(path: str, tree: Module | list | dict | tuple | None) -> None:
     flat, treedef = jtu.tree_flatten(tree)
     arrays = {}
+    primis = {}
 
     for i, value in enumerate(flat):
-        arrays[str(i)] = value
+        if isinstance(value, (jax.Array, onp.ndarray)):
+            arrays[str(i)] = value
+            continue
 
-    treedef = treedef_to_dict(treedef)
-    treedef = json.dumps(treedef, indent=2, cls=ConfigEncoder)
+        if isinstance(value, (bool, int, float, str)):
+            primis[str(i)] = value
+            continue
 
-    arrays["treedef"] = treedef
+        error = f"Invalid value type: {value}"
+        raise TypeError(error)
+
+    treedef = _treedef_to_dict(treedef)
+    jsondat = {"treedef": treedef, "primis": primis}
+
+    jsonstr = json.dumps(jsondat, indent=2, cls=ConfigEncoder)
+    arrays["json"] = jsonstr
+
     jnp.savez(path, **arrays)
 
 
 @typecheck
-def load_module(path: str) -> Module | list | dict | tuple | None:
-    """
-    Load a module from disk, which was saved using the 'save_module' function.
+class ConfigDecoder(json.JSONDecoder):
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(object_hook=self.object_hook, *args, **kwargs)
 
-    Example
-    ---
-    >>> module = {"key": "value"}
+    def object_hook(self: Self, obj) -> Any:
+        if isinstance(obj, dict):
+            return MappingProxyType(obj)
 
-    >>> from tempfile import NamedTemporaryFile
-    >>>
-    >>> with NamedTemporaryFile(suffix=".npz") as file:
-    ...     save_module(file.name, module)
-    ...     loaded = load_module(file.name)
-    ...
-    >>> assert loaded == module
-    """
+        if isinstance(obj, list):
+            return tuple(obj)
+
+        return obj
+
+
+@typecheck
+def load(path: str) -> Module | list | dict | tuple | None:
     arrays = dict(jnp.load(path))
+    jsondat = json.loads(str(arrays.pop("json")), cls=ConfigDecoder)
 
-    treedef = json.loads(str(arrays.pop("treedef")), cls=ConfigDecoder)
-    treedef = dict_to_treedef(treedef)
+    arrays = arrays | jsondat["primis"]
+    flat = [jnp.array(arrays[k]) for k in sorted(arrays, key=int)]
 
-    flat = [arrays[k] for k in sorted(arrays)]
+    treedef = _dict_to_treedef(jsondat["treedef"])
     return jtu.tree_unflatten(treedef, flat)

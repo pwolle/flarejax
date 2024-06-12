@@ -14,7 +14,7 @@ class PathFilter(Protocol):
 class N:
     v: Any
     k: tuple
-    s: "tuple[N, ...] | None"
+    s: tuple["N", ...]
 
 
 def flatten_one_level_with_path(tree):
@@ -40,7 +40,7 @@ def tree_with_keys(tree) -> tuple[N, ...]:
             N(
                 v,
                 k,
-                None if _is_leaf(v) else tree_with_keys(v),
+                () if _is_leaf(v) else tree_with_keys(v),
             )
         )
 

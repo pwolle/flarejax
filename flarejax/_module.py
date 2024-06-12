@@ -1,45 +1,20 @@
 import abc
 import dataclasses
-import functools
-import inspect
-from typing import (
-    Any,
-    Callable,
-    Hashable,
-    Mapping,
-    Self,
-    dataclass_transform,
-)
+from typing import Any, Callable, Self, dataclass_transform
 
 import jax
 import jax.tree_util as jtu
 
-from ._config import ConfigMapping, ConfigSequence, coerce_config_type
-from ._frozen import FrozenMappingHashable
-from ._modify import AtWrapper
+from ._trees import MODULE_REGISTRY
 from ._typecheck import typecheck
+from ._utils import array_summary
 
 __all__ = [
-    "GLOBAL_MODULE_REGISTRY",
     "get_module_name",
-    "field",
-    "FrozenDataclassMeta",
-    "FieldKey",
     "Module",
-    "AtWrapper",
-    "is_leaf",
+    "BoundMethod",
+    "BoundMethodWrap",
 ]
-
-# Global module registry to store all registered modules.
-# The registry is a dictionary with module names as keys and the module classes
-# as values. The module names are the names of the classes by default, but can
-# be overridden by setting a '__module_name' attribute on the class.
-GLOBAL_MODULE_REGISTRY = {
-    "list": list,
-    "dict": dict,
-    "tuple": tuple,
-    "NoneType": type(None),
-}
 
 
 @typecheck
@@ -78,34 +53,11 @@ def get_module_name(cls: type) -> str:
 
 
 @typecheck
-def field(
-    *,
-    grad: bool = True,
-    meta: Mapping | None = None,
-    **field_kwargs,
-) -> Any:
-    meta = {} if meta is None else dict(meta)
-
-    for v in meta.values():
-        if not isinstance(v, Hashable):
-            error = f"Metadata values must be hashable, but got: {v}"
-            raise TypeError(error)
-
-    assert "grad" not in meta, "'grad' is a reserved metadata key"
-    meta["grad"] = grad
-
-    return dataclasses.field(
-        metadata=FrozenMappingHashable(meta),  # type: ignore
-        **field_kwargs,
-    )
-
-
-@typecheck
 @dataclass_transform(frozen_default=True)
 class FrozenDataclassMeta(abc.ABCMeta, type):
     """
     This metaclass makes all its subclasses frozen dataclasses and registers
-    them as Jax PyTrees.
+    them as JAX PyTrees. The fields of the dataclass are the pytree leaves.
 
     Parameters:
     ---
@@ -120,47 +72,37 @@ class FrozenDataclassMeta(abc.ABCMeta, type):
         attrs: dict[str, Any],
         **kwargs: Any,
     ):
-        """
-        Convert the given class into a frozen dataclass.
-        """
-        # Make bound methods modules. however, exclude the base classes, as they
-        # are defined before the BoundMethod Module is defined.
-        if name not in {
-            "FrozenDataclassBase",
-            "Module",
-            "BoundMethod",
-            "AtWrapper",
-        }:
-            for key, value in attrs.items():
-                if key == "tree_flatten_with_keys" or key == "tree_unflatten":
-                    continue
+        for key, value in attrs.items():
+            if name in ["FrozenDataclassBase", "Module", "BoundMethod"]:
+                break
 
-                if key.startswith("__"):
-                    continue
+            if key == "tree_flatten_with_keys" or key == "tree_unflatten":
+                continue
 
-                if not callable(value):
-                    continue
+            if not callable(value):
+                continue
 
-                if isinstance(value, Module):
-                    continue
-
-                attrs[key] = BoundMethodWrap(value)
+            attrs[key] = BoundMethodWrap(value)
 
         cls_new = super().__new__(cls, name, bases, attrs)
-        cls_new = dataclasses.dataclass(frozen=True)(cls_new)
+        cls_new = dataclasses.dataclass(frozen=True, repr=False)(cls_new)
 
-        if kwargs.get("register", True):
-            module_name = get_module_name(cls_new)
+        if not kwargs.get("register", True):
+            return cls_new
 
-            if module_name in GLOBAL_MODULE_REGISTRY:
-                error = (
-                    f"Module with name '{module_name}' is already registered."
-                    "Consider using a different name for the module or adding a"
-                    "'__module_name' class attribute to the module definition."
-                )
-                raise ValueError(error)
+        module_name = get_module_name(cls_new)
 
-            GLOBAL_MODULE_REGISTRY[module_name] = cls_new
+        if module_name in MODULE_REGISTRY and not kwargs.get("replace", False):
+            error = (
+                f"Module with name '{module_name}' is already registered. "
+                "Consider using a different name for the module or adding a"
+                "'__module_name' class attribute to the module definition. "
+                "In case you want to replace the existing module, set the "
+                "'replace' keyword argument to 'True'."
+            )
+            raise ValueError(error)
+
+        MODULE_REGISTRY[module_name] = cls_new
 
         return cls_new
 
@@ -176,172 +118,65 @@ class FrozenDataclassMeta(abc.ABCMeta, type):
 
 
 @typecheck
-@dataclasses.dataclass(frozen=True)
-class FieldKey:
-    """
-    Dataclass to store metadata about a field in the key of the PyTree structure.
-
-    Attributes:
-    ---
-    TODO
-    """
-
-    name: str  # name of the field
-    type: type  # type of parent module
-    tree: ConfigMapping | ConfigSequence = ConfigMapping()  # static part
-    hint: FrozenMappingHashable = FrozenMappingHashable()  # metadata
-
-    # cache the hash value since it is O(n) to compute and it will not change,
-    # because the object is immutable
-    @functools.cached_property
-    def _hash(self) -> int:
-        return hash((self.name, self.tree, self.hint))
-
-    def __hash__(self) -> int:
-        return self._hash
-
-
-@typecheck
 class FrozenDataclassBase(metaclass=FrozenDataclassMeta, register=False):
-    """
-    Abstract base class for creating frozen dataclasses with support for the Jax
-    PyTree-with-keys API.
-
-    The class must implement the 'tree_flatten_with_keys' and 'tree_unflatten'
-    methods to support the Jax PyTree-with-keys API.
-    """
-
     @abc.abstractmethod
-    def tree_flatten_with_keys(
-        self: Self,
-    ) -> tuple[tuple[tuple[FieldKey, Any], ...], ConfigMapping]:
-        """
-        Flatten the PyTree node into a tuple of children and aux data.
-        """
+    def tree_flatten_with_keys(self: Self):
         error = "Abstract method 'tree_flatten_with_keys' must be implemented."
         raise NotImplementedError(error)
 
     @classmethod
     @abc.abstractmethod
-    def tree_unflatten(
-        cls,
-        aux_data: ConfigMapping | ConfigSequence,
-        children: tuple[Any, ...],
-    ) -> Self:
-        """
-        Unflatten the PyTree node from a tuple of children and aux data.
-        """
+    def tree_unflatten(cls, aux_data, children: tuple[Any, ...]) -> Self:
         error = "Abstract method 'tree_unflatten' must be implemented."
         raise NotImplementedError(error)
 
 
 @typecheck
-@functools.cache
-def sorted_fields(cls: type) -> list[dataclasses.Field]:
-    if not inspect.isclass(cls):
-        error = f"Expected a class, but got: {cls}"
-        raise TypeError(error)
-
-    if not dataclasses.is_dataclass(cls):
-        error = f"Expected a dataclass, but got: {cls}"
-        raise TypeError(error)
-
-    fields = dataclasses.fields(cls)
-    fields = sorted(fields, key=lambda f: f.name)
-    return fields
-
-
-@typecheck
-def is_leaf(value: Any) -> bool:
-    return isinstance(value, (Module, jax.Array, type(None)))
-
-
-@typecheck
-class Module(FrozenDataclassBase, register=False):
-    def __post_init__(self: Self) -> None:
-        for f in dataclasses.fields(type(self)):
-            value = getattr(self, f.name)
-
-            if is_leaf(value):
-                continue
-
-            value = coerce_config_type(value)
-            object.__setattr__(self, f.name, value)
-
-    def __frozen_set_attr__(self: Self, k: str, v: Any, /) -> Self:
-        return dataclasses.replace(self, **{k: v})
-
-    def __frozen_set_item__(self: Self, k: Any, v: Any, /) -> Any:
-        error = f"Setting items is not supported for '{type(self)}'"
-        raise NotImplementedError(error)
-
-    def __frozen_del_item__(self: Self, k: Any, /) -> Any:
-        error = f"Deleting items is not supported for '{type(self)}'"
-        raise NotImplementedError(error)
-
-    @property
-    def at(self: Self) -> "AtWrapper":
-        return AtWrapper(_at_module=self)
-
+class Module(FrozenDataclassBase):
     def tree_flatten_with_keys(
         self: Self,
-    ) -> tuple[tuple[tuple[FieldKey, Any], ...], ConfigMapping]:
-        """
-        Flatten the PyTree node into a tuple of the leaves with field keys and
-        a tuple with all of the non-leaf fields.
-        """
-        fields_static = []
-        fields_active = []
+    ) -> tuple[tuple[tuple[jtu.GetAttrKey, Any], ...], None]:
+        children = []
 
-        for field_ in sorted_fields(type(self)):
-            value = getattr(self, field_.name)
+        for field in sorted(dataclasses.fields(self), key=lambda f: f.name):
+            v = getattr(self, field.name)
+            k = jtu.GetAttrKey(field.name)
+            children.append((k, v))
 
-            if is_leaf(value):
-                fields_active.append(field_)
-            else:
-                fields_static.append(field_)
-
-        static = {}
-        for field_ in fields_static:
-            static[field_.name] = getattr(self, field_.name)
-
-        static = ConfigMapping(static)
-
-        active = []
-        for field_ in fields_active:
-            value = getattr(self, field_.name)
-
-            key = FieldKey(
-                name=field_.name,
-                type=type(self),
-                tree=static,
-                hint=FrozenMappingHashable(field_.metadata),
-            )
-            active.append((key, value))
-
-        return tuple(active), static
+        return tuple(children), None
 
     @classmethod
-    def tree_unflatten(
-        cls,
-        static: ConfigMapping,
-        active: tuple[Any, ...],
-    ) -> Self:
-        """
-        Unflatten the PyTree node from a tuple of children and aux data.
-        """
+    def tree_unflatten(cls, _: None, children: tuple[Any, ...]) -> Self:
         kwargs = {}
-        i = 0
+        fields = sorted(dataclasses.fields(cls), key=lambda f: f.name)
 
-        for field_ in sorted_fields(cls):
-            if field_.name in static:
-                kwargs[field_.name] = static[field_.name]
-
-            else:
-                kwargs[field_.name] = active[i]
-                i += 1
+        for child, field in zip(children, fields):
+            kwargs[field.name] = child
 
         return cls(**kwargs)
+
+    def __repr__(self) -> str:
+        head = f"{self.__class__.__name__}("
+        body = []
+
+        for field in dataclasses.fields(self):
+            value = getattr(self, field.name)
+
+            if isinstance(value, jax.Array):
+                value = array_summary(value)
+            else:
+                value = repr(value)
+
+            body.append(f"{field.name}={value}")
+
+        body = ",\n".join(body)
+        body = "\n" + body
+
+        body = body.replace("\n", "\n  ")
+        body = body + "\n"
+
+        tail = ")"
+        return head + body + tail
 
 
 @typecheck

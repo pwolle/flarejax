@@ -1,37 +1,20 @@
-from ._config import ConfigMapping, ConfigSequence
-from ._frozen import FrozenMapping, FrozenMappingHashable, FrozenSequence
-from ._module import FieldKey, Module, field
-from ._mtypes import (
-    Jit,
-    ModuleMapping,
-    ModuleSequence,
-    Partial,
-    Sequential,
-    VMap,
-)
-from ._serial import load_module, save_module
-from ._typecheck import typecheck
+from ._frozen import ModuleSequence, Sequential
+from ._module import BoundMethod, BoundMethodWrap, Module
+from ._mtypes import Jit, Partial, VMap
+from ._serial import load, save
 
-__version__ = "0.2.4"
-
+__version__ = "0.3.0"
 
 __all__ = [
-    "ConfigMapping",
-    "ConfigSequence",
-    "FrozenMapping",
-    "FrozenMappingHashable",
-    "FrozenSequence",
-    "Module",
-    "FieldKey",
-    "field",
-    "Jit",
-    "ModuleMapping",
     "ModuleSequence",
-    "Partial",
     "Sequential",
+    "BoundMethod",
+    "BoundMethodWrap",
+    "Module",
+    "Jit",
+    "Partial",
     "VMap",
-    "load_module",
-    "save_module",
-    "typecheck",
+    "load",
+    "save",
     "__version__",
 ]

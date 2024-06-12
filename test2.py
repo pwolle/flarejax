@@ -1,6 +1,8 @@
 # %%
 import jax.tree_util as jtu
 
+from types import MappingProxyType
+
 from typing import Protocol, runtime_checkable
 
 
@@ -25,6 +27,8 @@ nested = {
         6,
     ],
 }
+
+nested = MappingProxyType(nested)
 
 # nested["nested"] = nested
 

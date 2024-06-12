@@ -1,11 +1,9 @@
 # FlareJax
 Simple pytree module classes for Jax, strongly inspired by [Equinox](https://github.com/patrick-kidger/equinox)
 - Referential transparency via strict immutability
-- Easy manipulation using `.at` & `.set`
 - Safe serialization including hyperparameters
 - Bound methods and function transformations are also modules
 - Auxillary information in key paths for filtered transformations
-
 
 ## Quick Examples
 Modules work similar to dataclasses, but with the added benefit of being pytrees. Making them compatible with all Jax function transformations.
@@ -16,9 +14,6 @@ class Linear(fj.Module):
     # The __init__ method is automatically generated
     w: jax.Array
     b: jax.Array
-
-    # only jax arrays and modules are considered pytree leaves
-    aux: None = None
 
     # additional intialization methods via classmethods
     @classmethod
@@ -39,13 +34,6 @@ model = fj.Sequential(
         Linear.init(key2, 2, 5),
     )
 )
-```
-
-Although modules are immutable, modified copies can be created using the `at` property.
-```python
-w_new = jax.numpy.ones((2, 3))
-model = model.at[0].w.set(w_new)
-```
 
 The model can be serialized and deserialized using `fj.save` and `fj.load`.
 ```python
@@ -76,6 +64,7 @@ Most jax libraries should be compatible with flarejax modules, since they are si
 ## Roadmap
 - [ ] Filtered grad transformation based on key paths
 - [ ] Pretty printing for modules
+- [ ] Rule to infer static arguments in jitted functions, possibly everything except JAX arrays
 
 ## See also
 - The beautiful [Equinox](https://github.com/patrick-kidger/equinox) library
