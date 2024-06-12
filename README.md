@@ -34,6 +34,7 @@ model = fj.Sequential(
         Linear.init(key2, 2, 5),
     )
 )
+```
 
 The model can be serialized and deserialized using `fj.save` and `fj.load`.
 ```python
