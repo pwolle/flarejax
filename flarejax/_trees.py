@@ -29,7 +29,7 @@ def _flatten_mappingproxy_with_keys(
     return tuple(children), tuple(aux_data)
 
 
-def _unflatten_mappingproxy(children, _):
+def _unflatten_mappingproxy(_, children) -> MappingProxyType:
     return MappingProxyType(dict(children))
 
 
@@ -53,7 +53,7 @@ def _flatten_slice_with_keys(
     )
 
 
-def _unflatten_slice(children, _) -> slice:
+def _unflatten_slice(_, children) -> slice:
     return slice(*children)
 
 
