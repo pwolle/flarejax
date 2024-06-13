@@ -87,6 +87,8 @@ class FrozenDataclassMeta(abc.ABCMeta, type):
         cls_new = super().__new__(cls, name, bases, attrs)
         cls_new = dataclasses.dataclass(frozen=True, repr=False)(cls_new)
 
+        cls_new.__init__ = typecheck(cls_new.__init__)
+
         if not kwargs.get("register", True):
             return cls_new
 

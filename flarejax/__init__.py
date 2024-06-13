@@ -4,7 +4,7 @@ from ._mtypes import Jit, Partial, VMap
 from ._serial import load, save
 from ._typecheck import typecheck
 
-__version__ = "0.3.2"
+__version__ = "0.3.4"
 
 __all__ = [
     "ModuleSequence",
