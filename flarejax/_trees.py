@@ -1,7 +1,7 @@
-import jax.tree_util as jtu
-
 from types import MappingProxyType
+from typing import Any
 
+import jax.tree_util as jtu
 
 # Global module registry to store all registered modules.
 # The registry is a dictionary with module names as keys and the module classes
@@ -37,4 +37,28 @@ jtu.register_pytree_with_keys(
     MappingProxyType,
     _flatten_mappingproxy_with_keys,
     _unflatten_mappingproxy,
+)
+
+
+def _flatten_slice_with_keys(
+    slice_: slice,
+) -> tuple[tuple[tuple[jtu.GetAttrKey, Any], ...], None]:
+    return (
+        (
+            (jtu.GetAttrKey("start"), slice_.start),
+            (jtu.GetAttrKey("stop"), slice_.stop),
+            (jtu.GetAttrKey("step"), slice_.step),
+        ),
+        None,
+    )
+
+
+def _unflatten_slice(children, _) -> slice:
+    return slice(*children)
+
+
+jtu.register_pytree_with_keys(
+    slice,
+    _flatten_slice_with_keys,
+    _unflatten_slice,
 )

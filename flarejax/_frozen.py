@@ -11,7 +11,7 @@ __all__ = [
     "Sequential",
 ]
 
-T = TypeVar("T")
+T = TypeVar("T", bound=Module)
 
 
 @typecheck
@@ -116,7 +116,7 @@ class ModuleSequence(Module, Generic[T]):
         return cls(children)
 
 
-class Sequential(ModuleSequence[Module]):
+class Sequential(ModuleSequence):
     def __post_init__(self: Self) -> None:
         super().__post_init__()
 
