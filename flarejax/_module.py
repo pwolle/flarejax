@@ -159,6 +159,10 @@ class Module(FrozenDataclassBase):
 
     def __repr__(self) -> str:
         head = f"{self.__class__.__name__}("
+
+        if len(dataclasses.fields(self)) == 0:
+            return head + ")"
+
         body = []
 
         for field in dataclasses.fields(self):
