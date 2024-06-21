@@ -1,6 +1,19 @@
 import jax
 import jax.numpy as jnp
 
+import functools
+
+from typing import Any, Callable, ParamSpec, TypeVar
+
+__all__ = [
+    "array_summary",
+    "wraps_with_hints",
+]
+
+
+T = TypeVar("T")
+P = ParamSpec("P")
+
 
 def array_summary(array: jax.Array) -> str:
     dtype = array.dtype.str[1:]
@@ -27,3 +40,10 @@ def array_summary(array: jax.Array) -> str:
         head = f"{head} {body}"
 
     return head
+
+
+def wraps_with_hints(f: Callable[P, T]) -> Callable[[Callable[P, T]], Callable[P, T]]:
+    def decorator(g: Callable[P, T]) -> Callable[P, T]:
+        return functools.wraps(f)(g)
+
+    return decorator

@@ -1,20 +1,32 @@
 import abc
 import dataclasses
-from typing import Any, Callable, Self, dataclass_transform
+from typing import Any, Callable, Self, dataclass_transform, Hashable, Sequence
 
 import jax
+import functools
 import jax.tree_util as jtu
 
 from ._trees import MODULE_REGISTRY
 from ._typecheck import typecheck
 from ._utils import array_summary
+from types import MappingProxyType
 
 __all__ = [
+    "field",
     "get_module_name",
     "Module",
     "BoundMethod",
     "BoundMethodWrap",
 ]
+
+
+@functools.wraps(dataclasses.field)
+def field(*, static: bool = False, **kwargs):
+    metadata = kwargs.pop("metadata", {})
+    metadata = dict(metadata)  # perform copy and make mutable
+    metadata["static"] = static
+    metadata = MappingProxyType(metadata)  # make immutable again
+    return dataclasses.field(metadata=metadata, **kwargs)
 
 
 @typecheck
@@ -137,22 +149,47 @@ class FrozenDataclassBase(metaclass=FrozenDataclassMeta, register=False):
 class Module(FrozenDataclassBase):
     def tree_flatten_with_keys(
         self: Self,
-    ) -> tuple[tuple[tuple[jtu.GetAttrKey, Any], ...], None]:
+    ) -> tuple[
+        tuple[tuple[jtu.GetAttrKey, Any], ...],
+        tuple[tuple[str, Hashable], ...],
+    ]:
         children = []
+        aux_data = []
 
         for field in sorted(dataclasses.fields(self), key=lambda f: f.name):
+            if field.metadata.get("static", False):
+                value = getattr(self, field.name)
+
+                if not isinstance(value, Hashable):
+                    error = f"Non-hashable static data '{field.name}: {value}'"
+                    raise ValueError(error)
+
+                aux_data.append((field.name, value))
+                continue
+
             v = getattr(self, field.name)
             k = jtu.GetAttrKey(field.name)
             children.append((k, v))
 
-        return tuple(children), None
+        return tuple(children), tuple(aux_data)
 
     @classmethod
-    def tree_unflatten(cls, _: None, children: tuple[Any, ...]) -> Self:
+    def tree_unflatten(
+        cls,
+        aux_data: Sequence[tuple[str, Hashable]],
+        children: tuple[Any, ...],
+    ) -> Self:
+        aux_data_dict = dict(aux_data)
         kwargs = {}
+
         fields = sorted(dataclasses.fields(cls), key=lambda f: f.name)
 
         for child, field in zip(children, fields):
+            if field.name in aux_data_dict:
+
+                kwargs[field.name] = aux_data_dict[field.name]
+                continue
+
             kwargs[field.name] = child
 
         return cls(**kwargs)

@@ -22,6 +22,7 @@ __all__ = [
     "ModuleMapping",
     "ModuleSequence",
     "Sequential",
+    "SequenceKey",
 ]
 
 T = TypeVar("T")
@@ -48,8 +49,8 @@ class ModuleSequence(Module, Generic[T]):
         head = f"{self.__class__.__name__}("
         body = []
 
-        for i, value in enumerate(self._data):
-            body.append(f"{i}={value!r}")
+        for value in self._data:
+            body.append(f"{value!r}")
 
         body = ",\n".join(body)
         body = "\n" + body
