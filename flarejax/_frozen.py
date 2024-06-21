@@ -1,5 +1,17 @@
 import dataclasses
-from typing import Generic, Iterator, Self, Sequence, TypeVar, overload
+from types import MappingProxyType
+from typing import (
+    Generic,
+    ItemsView,
+    Iterator,
+    KeysView,
+    Mapping,
+    Self,
+    Sequence,
+    TypeVar,
+    ValuesView,
+    overload,
+)
 
 import jax.tree_util as jtu
 
@@ -7,11 +19,21 @@ from ._module import Module
 from ._typecheck import typecheck
 
 __all__ = [
+    "ModuleMapping",
     "ModuleSequence",
     "Sequential",
 ]
 
-T = TypeVar("T", bound=Module)
+T = TypeVar("T")
+
+
+@dataclasses.dataclass(frozen=True)
+class SequenceKey:
+    idx: int
+    len: int | None = None  # to allow for matching with negative indices
+
+    def __str__(self):
+        return f"[{self.idx!r}]"
 
 
 @typecheck
@@ -29,14 +51,11 @@ class ModuleSequence(Module, Generic[T]):
         for i, value in enumerate(self._data):
             body.append(f"{i}={value!r}")
 
-        if sum(map(len, body)) > 60:
-            body = ",\n".join(body)
-            body = "\n" + body
+        body = ",\n".join(body)
+        body = "\n" + body
 
-            body = body.replace("\n", "\n  ")
-            body = body + "\n"
-        else:
-            body = ", ".join(body)
+        body = body.replace("\n", "\n  ")
+        body = body + "\n"
 
         tail = ")"
         return head + body + tail
@@ -103,10 +122,10 @@ class ModuleSequence(Module, Generic[T]):
 
     def tree_flatten_with_keys(
         self: Self,
-    ) -> tuple[tuple[tuple[jtu.SequenceKey, T], ...], None]:
+    ) -> tuple[tuple[tuple[SequenceKey, T], ...], None]:
         children = []
         for i, v in enumerate(self):
-            k = jtu.SequenceKey(i)
+            k = SequenceKey(i, len(self))
             children.append((k, v))
 
         return tuple(children), None
@@ -134,3 +153,84 @@ class Sequential(ModuleSequence):
             x = module(x)
 
         return x
+
+
+@typecheck
+class ModuleMapping(Module, Generic[T]):
+    _data: Mapping[str, T] = dataclasses.field(
+        default_factory=lambda: MappingProxyType({}),
+    )
+
+    def __post_init__(self: Self) -> None:
+        object.__setattr__(self, "_data", MappingProxyType(self._data))
+
+    def __repr__(self: Self) -> str:
+        head = f"{self.__class__.__name__}({{"
+        body = []
+
+        for key in sorted(self.keys()):
+            value = self[key]
+            body.append(f"{key!r}: {value!r}")
+
+        body = ",\n".join(body)
+        body = "\n" + body
+
+        body = body.replace("\n", "\n  ")
+        body = body + "\n"
+
+        tail = "})"
+        return head + body + tail
+
+    def __getitem__(self: Self, key: str, /) -> T:
+        return self._data[key]
+
+    def __iter__(self: Self) -> Iterator[str]:
+        return iter(self._data)
+
+    def __len__(self: Self) -> int:
+        return len(self._data)
+
+    def __contains__(self: Self, key: str, /) -> bool:
+        return key in self._data
+
+    def keys(self: Self) -> KeysView[str]:
+        return self._data.keys()
+
+    def values(self: Self) -> ValuesView[T]:
+        return self._data.values()
+
+    def items(self: Self) -> ItemsView[str, T]:
+        return self._data.items()
+
+    def tree_flatten_with_keys(
+        self: Self,
+    ) -> tuple[tuple[tuple[jtu.DictKey, T], ...], tuple[str, ...]]:
+        children = []
+        aux_data = sorted(self.keys())
+
+        for key in aux_data:
+            children.append((jtu.DictKey(key), self[key]))
+
+        return tuple(children), tuple(aux_data)
+
+    @classmethod
+    def tree_unflatten(
+        cls,
+        aux_data: tuple[str, ...],
+        children: tuple[T, ...],
+    ) -> Self:
+        data = {}
+        for k, v in zip(aux_data, children):
+            data[k] = v
+
+        return cls(data)
+
+    def pop(self: Self, key: str, /) -> tuple[Self, T]:
+        data = dict(self._data)
+        value = data.pop(key)
+        return type(self)(data), value
+
+    def update(self: Self, other: Mapping[str, T], /) -> Self:
+        data = dict(self._data)
+        data.update(other)
+        return type(self)(data)
