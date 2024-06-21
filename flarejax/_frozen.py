@@ -2,6 +2,7 @@ import dataclasses
 from types import MappingProxyType
 from typing import (
     Generic,
+    Hashable,
     ItemsView,
     Iterator,
     KeysView,
@@ -26,6 +27,7 @@ __all__ = [
 ]
 
 T = TypeVar("T")
+K = TypeVar("K", bound=Hashable)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -157,8 +159,8 @@ class Sequential(ModuleSequence):
 
 
 @typecheck
-class ModuleMapping(Module, Generic[T]):
-    _data: Mapping[str, T] = dataclasses.field(
+class ModuleMapping(Module, Generic[K, T]):
+    _data: Mapping[K, T] = dataclasses.field(
         default_factory=lambda: MappingProxyType({}),
     )
 
@@ -169,7 +171,7 @@ class ModuleMapping(Module, Generic[T]):
         head = f"{self.__class__.__name__}({{"
         body = []
 
-        for key in sorted(self.keys()):
+        for key in self.keys():
             value = self[key]
             body.append(f"{key!r}: {value!r}")
 
@@ -182,42 +184,42 @@ class ModuleMapping(Module, Generic[T]):
         tail = "})"
         return head + body + tail
 
-    def __getitem__(self: Self, key: str, /) -> T:
+    def __getitem__(self: Self, key: K, /) -> T:
         return self._data[key]
 
-    def __iter__(self: Self) -> Iterator[str]:
+    def __iter__(self: Self) -> Iterator[K]:
         return iter(self._data)
 
     def __len__(self: Self) -> int:
         return len(self._data)
 
-    def __contains__(self: Self, key: str, /) -> bool:
+    def __contains__(self: Self, key: K, /) -> bool:
         return key in self._data
 
-    def keys(self: Self) -> KeysView[str]:
+    def keys(self: Self) -> KeysView[K]:
         return self._data.keys()
 
     def values(self: Self) -> ValuesView[T]:
         return self._data.values()
 
-    def items(self: Self) -> ItemsView[str, T]:
+    def items(self: Self) -> ItemsView[K, T]:
         return self._data.items()
 
     def tree_flatten_with_keys(
         self: Self,
-    ) -> tuple[tuple[tuple[jtu.DictKey, T], ...], tuple[str, ...]]:
+    ) -> tuple[tuple[tuple[jtu.DictKey, T], ...], tuple[K, ...]]:
         children = []
-        aux_data = sorted(self.keys())
+        aux_data = tuple(sorted(self.keys(), key=hash))
 
         for key in aux_data:
             children.append((jtu.DictKey(key), self[key]))
 
-        return tuple(children), tuple(aux_data)
+        return tuple(children), aux_data
 
     @classmethod
     def tree_unflatten(
         cls,
-        aux_data: tuple[str, ...],
+        aux_data: tuple[K, ...],
         children: tuple[T, ...],
     ) -> Self:
         data = {}
@@ -226,12 +228,12 @@ class ModuleMapping(Module, Generic[T]):
 
         return cls(data)
 
-    def pop(self: Self, key: str, /) -> tuple[Self, T]:
+    def pop(self: Self, key: K, /) -> tuple[Self, T]:
         data = dict(self._data)
         value = data.pop(key)
         return type(self)(data), value
 
-    def update(self: Self, other: Mapping[str, T], /) -> Self:
+    def update(self: Self, other: Mapping[K, T], /) -> Self:
         data = dict(self._data)
         data.update(other)
         return type(self)(data)
