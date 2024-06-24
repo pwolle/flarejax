@@ -11,6 +11,13 @@ from ._typecheck import typecheck
 from ._utils import array_summary
 from types import MappingProxyType
 
+
+try:
+    from oryx.core.interpreters.harvest import nest
+
+except ImportError:
+    nest = lambda x, scope: x
+
 __all__ = [
     "field",
     "get_module_name",
@@ -265,6 +272,7 @@ class BoundMethod(Module):
     def __call__(self: Self, *args, **kwargs):
         method = getattr(type(self.module), self.method)
         method = jax.named_scope(self.scope)(method)
+        method = nest(method, scope=self.scope)
         return method(self.module, *args, **kwargs)
 
 
