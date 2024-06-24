@@ -1,5 +1,11 @@
 from ._frozen import ModuleMapping, ModuleSequence, SequenceKey, Sequential
-from ._module import BoundMethod, BoundMethodWrap, Module, field
+from ._module import (
+    BoundMethod,
+    BoundMethodWrap,
+    Module,
+    field,
+    get_module_name,
+)
 from ._mtypes import Jit, Partial, VMap
 from ._serial import load, save
 from ._typecheck import typecheck
@@ -16,6 +22,7 @@ __all__ = [
     "BoundMethodWrap",
     "Module",
     "field",
+    "get_module_name",
     "Jit",
     "Partial",
     "VMap",

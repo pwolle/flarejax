@@ -48,7 +48,10 @@ class ModuleSequence(Module, Generic[T]):
         object.__setattr__(self, "_data", tuple(self._data))
 
     def __repr__(self: Self) -> str:
-        head = f"{self.__class__.__name__}("
+        head = f"{self.__class__.__name__}(["
+        if len(self) == 0:
+            return head + "])"
+
         body = []
 
         for value in self._data:
@@ -169,6 +172,9 @@ class ModuleMapping(Module, Generic[K, T]):
 
     def __repr__(self: Self) -> str:
         head = f"{self.__class__.__name__}({{"
+        if len(self) == 0:
+            return head + "})"
+
         body = []
 
         for key in self.keys():

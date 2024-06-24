@@ -253,8 +253,18 @@ class BoundMethod(Module):
     def __self__(self: Self) -> Module:
         return self.module
 
+    @property
+    def scope(self: Self) -> str:
+        scope = get_module_name(type(self.module))
+
+        if self.method != "__call__":
+            scope = f"{scope}.{self.method}"
+
+        return scope
+
     def __call__(self: Self, *args, **kwargs):
         method = getattr(type(self.module), self.method)
+        method = jax.named_scope(self.scope)(method)
         return method(self.module, *args, **kwargs)
 
 
