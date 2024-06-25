@@ -1,11 +1,10 @@
-import dataclasses
 import functools
 from types import MappingProxyType
-from typing import Callable, Mapping, Self, Sequence, TypeVar
+from typing import Callable, Mapping, Self, Sequence, TypeVar, ParamSpec
 
 import jax
 
-from ._module import Module
+from ._module import Module, field
 from ._typecheck import typecheck
 
 __all__ = [
@@ -14,11 +13,16 @@ __all__ = [
     "Partial",
 ]
 
-M = TypeVar("M")
+T = TypeVar("T")
+P = ParamSpec("P")
 
 
 @jax.jit
-def _jit_apply_layer(layer, *args, **kwargs):
+def _jit_apply_layer(
+    layer: Callable[P, T],
+    *args: P.args,
+    **kwargs: P.kwargs,
+) -> T:
     return layer(*args, **kwargs)
 
 
@@ -63,8 +67,8 @@ class VMap(Module):
     """
 
     module: Module
-    in_axes: int | None = 0
-    out_axes: int | None = 0
+    in_axes: int | None = field(static=True)
+    out_axes: int | None = field(static=True)
 
     def __post_init__(self: Self) -> None:
         if not callable(self.module):
@@ -99,9 +103,10 @@ class Partial(Module):
     """
 
     module: Module
-    args: Sequence = ()
-    kwargs: Mapping = dataclasses.field(
+    args: Sequence = field(default=(), static=True)
+    kwargs: Mapping = field(
         default_factory=lambda: MappingProxyType({}),
+        static=True,
     )
 
     @classmethod
