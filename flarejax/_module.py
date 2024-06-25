@@ -95,8 +95,12 @@ class FrozenDataclassMeta(abc.ABCMeta, type):
             if name in ["FrozenDataclassBase", "Module", "BoundMethod"]:
                 break
 
-            if key == "tree_flatten_with_keys" or key == "tree_unflatten":
+            if key in ["tree_flatten_with_keys", "tree_unflatten"]:
                 continue
+
+            if key != "__call__":
+                if key.startswith("__") and key.endswith("__"):
+                    continue
 
             if not callable(value):
                 continue
