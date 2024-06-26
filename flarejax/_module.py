@@ -182,6 +182,7 @@ class Module(FrozenDataclassBase):
             k = jtu.GetAttrKey(field.name)
             children.append((k, v))
 
+        # print(children, "aux", aux_data)
         return tuple(children), tuple(aux_data)
 
     @classmethod
@@ -194,16 +195,16 @@ class Module(FrozenDataclassBase):
         kwargs = {}
 
         fields = sorted(dataclasses.fields(cls), key=lambda f: f.name)
+        i = 0
 
-        for child, field in zip(children, fields):
+        for field in fields:
             if field.name in aux_data_dict:
-
-                kwargs[field.name] = aux_data_dict[field.name]
                 continue
 
-            kwargs[field.name] = child
+            kwargs[field.name] = children[i]
+            i += 1
 
-        return cls(**kwargs)
+        return cls(**kwargs, **aux_data_dict)
 
     def __repr__(self) -> str:
         head = f"{self.__class__.__name__}("

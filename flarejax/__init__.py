@@ -11,7 +11,7 @@ from ._serial import load, save
 from ._typecheck import typecheck
 from ._utils import array_summary
 
-__version__ = "0.3.13"
+__version__ = "0.3.14"
 
 __all__ = [
     "ModuleMapping",
