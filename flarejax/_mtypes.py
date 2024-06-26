@@ -67,8 +67,8 @@ class VMap(Module):
     """
 
     module: Module
-    in_axes: int | None = field(static=True)
-    out_axes: int | None = field(static=True)
+    in_axes: int | None = field(default=0, static=True)
+    out_axes: int | None = field(default=0, static=True)
 
     def __post_init__(self: Self) -> None:
         if not callable(self.module):
