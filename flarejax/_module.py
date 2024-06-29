@@ -98,9 +98,8 @@ class FrozenDataclassMeta(abc.ABCMeta, type):
             if key in ["tree_flatten_with_keys", "tree_unflatten"]:
                 continue
 
-            if key != "__call__":
-                if key.startswith("__") and key.endswith("__"):
-                    continue
+            if key.startswith("__") and key.endswith("__"):
+                continue
 
             if not callable(value):
                 continue
