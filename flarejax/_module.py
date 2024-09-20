@@ -1,135 +1,32 @@
 import abc
+import copy
 import dataclasses
-from typing import Any, Callable, Self, dataclass_transform, Hashable, Sequence
+from typing import (
+    Any,
+    Callable,
+    Hashable,
+    Self,
+    Sequence,
+    TypeAlias,
+    overload,
+)
 
 import jax
-import functools
 import jax.tree_util as jtu
 
-from ._trees import MODULE_REGISTRY
-from ._typecheck import typecheck
-from ._utils import array_summary
-from types import MappingProxyType
-
-
-try:
-    from oryx.core.interpreters.harvest import nest
-except ImportError:
-    nest = lambda x, scope: x
+from ._tcheck import typecheck
+from ._utils import array_str
 
 
 __all__ = [
-    "field",
-    "get_module_name",
     "Module",
-    "BoundMethod",
-    "BoundMethodWrap",
+    "flatten",
+    "unflatten",
 ]
 
 
-@functools.wraps(dataclasses.field)
-def field(*, static: bool = False, **kwargs):
-    metadata = kwargs.pop("metadata", {})
-    metadata = dict(metadata)  # perform copy and make mutable
-    metadata["static"] = static
-    metadata = MappingProxyType(metadata)  # make immutable again
-    return dataclasses.field(metadata=metadata, **kwargs)
-
-
 @typecheck
-def get_module_name(cls: type) -> str:
-    """
-    Get the name of a given module class. This is the class name by default,
-    but can be overridden by setting a '__module_name' attribute on the class.
-
-    The double underscore invokes python's name mangling which makes sure,
-    that the same name is not used for two modules, just because one inherits
-    from the other.
-
-    Parameters:
-    ---
-    cls: type
-        The class to get the module name for.
-
-    Returns:
-    ---
-    str
-        The name of the module class.
-    """
-    # attribute name of '__module_name' after private name mangling
-    mangled_name = f"_{cls.__name__}__module_name"
-
-    if hasattr(cls, mangled_name):
-        name = getattr(cls, mangled_name)
-
-        if not isinstance(name, str):
-            error = f"Expected __module_name to be a string, but got: {name}"
-            raise TypeError(error)
-
-        return name
-
-    return cls.__name__
-
-
-@typecheck
-@dataclass_transform(frozen_default=True)
-class FrozenDataclassMeta(abc.ABCMeta, type):
-    """
-    This metaclass makes all its subclasses frozen dataclasses and registers
-    them as JAX PyTrees. The fields of the dataclass are the pytree leaves.
-
-    Parameters:
-    ---
-    register: bool
-        Whether to register the class in the global module registry.
-    """
-
-    def __new__(
-        cls,
-        name: str,
-        bases: tuple[type, ...],
-        attrs: dict[str, Any],
-        **kwargs: Any,
-    ):
-        for key, value in attrs.items():
-            if name in ["FrozenDataclassBase", "Module", "BoundMethod"]:
-                break
-
-            if key in ["tree_flatten_with_keys", "tree_unflatten"]:
-                continue
-
-            if key.startswith("__") and key.endswith("__"):
-                continue
-
-            if not callable(value):
-                continue
-
-            attrs[key] = BoundMethodWrap(value)
-
-        cls_new = super().__new__(cls, name, bases, attrs)
-        cls_new = dataclasses.dataclass(frozen=True, repr=False)(cls_new)
-
-        cls_new.__init__ = typecheck(cls_new.__init__)
-
-        if not kwargs.get("register", True):
-            return cls_new
-
-        module_name = get_module_name(cls_new)
-
-        if module_name in MODULE_REGISTRY and not kwargs.get("replace", False):
-            error = (
-                f"Module with name '{module_name}' is already registered. "
-                "Consider using a different name for the module or adding a"
-                "'__module_name' class attribute to the module definition. "
-                "In case you want to replace the existing module, set the "
-                "'replace' keyword argument to 'True'."
-            )
-            raise ValueError(error)
-
-        MODULE_REGISTRY[module_name] = cls_new
-
-        return cls_new
-
+class PyTreeMeta(abc.ABCMeta, type):
     def __init__(
         cls,
         name: str,
@@ -138,156 +35,373 @@ class FrozenDataclassMeta(abc.ABCMeta, type):
         **_: Any,
     ) -> None:
         super().__init__(name, bases, attrs)
-        jtu.register_pytree_with_keys_class(cls)
+        jtu.register_pytree_node_class(cls)
 
 
 @typecheck
-class FrozenDataclassBase(metaclass=FrozenDataclassMeta, register=False):
+class PyTreeBase(metaclass=PyTreeMeta):
     @abc.abstractmethod
-    def tree_flatten_with_keys(self: Self):
-        error = "Abstract method 'tree_flatten_with_keys' must be implemented."
+    def tree_flatten(self: Self):
+        error = "Abstract method 'tree_flatten' must be implemented."
         raise NotImplementedError(error)
 
     @classmethod
     @abc.abstractmethod
-    def tree_unflatten(cls, aux_data, children: tuple[Any, ...]) -> Self:
+    def tree_unflatten(cls, aux_data, children):
         error = "Abstract method 'tree_unflatten' must be implemented."
         raise NotImplementedError(error)
 
 
 @typecheck
-class Module(FrozenDataclassBase):
-    def tree_flatten_with_keys(
-        self: Self,
-    ) -> tuple[
-        tuple[tuple[jtu.GetAttrKey, Any], ...],
-        tuple[tuple[str, Hashable], ...],
-    ]:
-        children = []
-        aux_data = []
+class Module(PyTreeBase):
+    def tree_flatten(self: Self):
+        leaves, struct = flatten(self)
 
-        for field in sorted(dataclasses.fields(self), key=lambda f: f.name):
-            if field.metadata.get("static", False):
-                value = getattr(self, field.name)
+        active = []
+        active_keys = []
 
-                if not isinstance(value, Hashable):
-                    error = f"Non-hashable static data '{field.name}: {value}'"
-                    raise ValueError(error)
+        static = {}
 
-                aux_data.append((field.name, value))
+        for key, val in leaves.items():
+            if isinstance(val, jax.Array):
+                active.append(val)
+                active_keys.append(key)
                 continue
 
-            v = getattr(self, field.name)
-            k = jtu.GetAttrKey(field.name)
-            children.append((k, v))
+            static[key] = val
 
-        # print(children, "aux", aux_data)
-        return tuple(children), tuple(aux_data)
+        return active, (AuxData(struct, static, active_keys),)
 
     @classmethod
-    def tree_unflatten(
-        cls,
-        aux_data: Sequence[tuple[str, Hashable]],
-        children: tuple[Any, ...],
-    ) -> Self:
-        aux_data_dict = dict(aux_data)
-        kwargs = {}
-
-        fields = sorted(dataclasses.fields(cls), key=lambda f: f.name)
-        i = 0
-
-        for field in fields:
-            if field.name in aux_data_dict:
-                continue
-
-            kwargs[field.name] = children[i]
-            i += 1
-
-        return cls(**kwargs, **aux_data_dict)
+    def tree_unflatten(cls, aux_data, active):
+        aux_data = aux_data[0]
+        active = dict(zip(aux_data.active_keys, active))
+        return unflatten(
+            aux_data.static | active,
+            aux_data.struct,
+        )
 
     def __repr__(self) -> str:
-        head = f"{self.__class__.__name__}("
-
-        if len(dataclasses.fields(self)) == 0:
-            return head + ")"
-
+        head = f"{type(self).__name__}("
         body = []
 
-        for field in dataclasses.fields(self):
-            value = getattr(self, field.name)
+        for lookup in get_lookups(self):
+            val = get_with_lookup(self, lookup)
 
-            if isinstance(value, jax.Array):
-                value = array_summary(value)
-            else:
-                value = repr(value)
+            if not isinstance(val, Module):
+                continue
 
-            body.append(f"{field.name}={value}")
+            rep = repr(val)
+            rep = f"{lookup.key}={rep}"
+
+            body.append(rep)
+
+        if not body:
+            return head + ")"
 
         body = ",\n".join(body)
         body = "\n" + body
 
+        # add indentation
         body = body.replace("\n", "\n  ")
-        body = body + "\n"
+        body = body + ",\n"
 
         tail = ")"
         return head + body + tail
 
 
-@typecheck
-class BoundMethod(Module):
-    module: Module
-    method: str
-
-    @classmethod
-    def init(cls, module_method) -> Self:
-        if not hasattr(module_method, "__self__"):
-            error = f"Method {module_method} is not bound to a module."
-            raise ValueError(error)
-
-        module = module_method.__self__
-
-        if not callable(module_method):
-            error = f"Method {module_method} is not callable."
-            raise ValueError(error)
-
-        if not isinstance(module, Module):
-            error = f"Object {module} is not a Module."
-            raise ValueError(error)
-
-        return cls(
-            module=module,
-            method=module_method.__name__,
-        )
-
-    # maintain compatibility with the original python bound method type
-    @property
-    def __self__(self: Self) -> Module:
-        return self.module
-
-    @property
-    def scope(self: Self) -> str:
-        scope = get_module_name(type(self.module))
-
-        if self.method != "__call__":
-            scope = f"{scope}.{self.method}"
-
-        return scope
-
-    def __call__(self: Self, *args, **kwargs):
-        method = getattr(type(self.module), self.method)
-        # method = jax.named_scope(self.scope)(method)
-        # method = nest(method, scope=self.scope)
-        return method(self.module, *args, **kwargs)
+NestedType: TypeAlias = Module | list | tuple | dict
 
 
 @typecheck
 @dataclasses.dataclass(frozen=True)
-class BoundMethodWrap:
-    method: Callable
+class ItemLookup:
+    key: Hashable | int
+    src: type | None
 
-    def __get__(self: Self, instance, owner=None) -> Callable | BoundMethod:
-        if instance is None:
-            return self.method
+    def __repr__(self) -> str:
+        return f"[{self.key}]"
 
-        method = self.method.__get__(instance, owner)
-        return BoundMethod.init(method)
+
+@typecheck
+@dataclasses.dataclass(frozen=True)
+class AttrLookup:
+    key: str
+    src: type | None
+
+    def __repr__(self) -> str:
+        return f".{self.key}"
+
+
+@typecheck
+def get_lookups(obj: Any, /) -> list[ItemLookup | AttrLookup]:
+    src = type(obj)
+
+    if not isinstance(obj, NestedType):
+        return []
+
+    if isinstance(obj, (list, tuple)):
+        return [ItemLookup(i, src) for i in range(len(obj))]
+
+    if isinstance(obj, dict):
+        return [ItemLookup(k, src) for k in sorted(obj.keys(), key=hash)]
+
+    if isinstance(obj, set):
+        return []
+
+    if isinstance(obj, Module):
+        keys = []
+
+        if hasattr(obj, "__dict__"):
+            keys.extend(sorted(obj.__dict__.keys()))
+
+        if hasattr(obj, "__slots__"):
+            keys.extend(sorted(obj.__slots__))  # type: ignore
+
+        return [AttrLookup(k, src) for k in keys]
+
+    raise ValueError(f"Unhashable type: {src}")
+
+
+@typecheck
+def get_with_lookup(
+    obj: Any,
+    /,
+    lookup: ItemLookup | AttrLookup,
+) -> Any:
+    if isinstance(lookup, ItemLookup):
+        return obj[lookup.key]
+
+    return getattr(obj, lookup.key)
+
+
+@typecheck
+def set_with_lookup(
+    obj: NestedType,
+    lookup: ItemLookup | AttrLookup,
+    value: Any,
+) -> Any:
+    if not isinstance(obj, NestedType):
+        raise TypeError(f"Cannot set lookup on `{type(obj)}`")
+
+    if isinstance(lookup, AttrLookup):
+        object.__setattr__(obj, lookup.key, value)
+        return obj
+
+    if isinstance(obj, list):
+        assert isinstance(lookup.key, int), "Expected `int` key"
+        assert len(obj) > lookup.key, "Index out of range"
+
+        obj[lookup.key] = value
+        return obj
+
+    if isinstance(obj, tuple):
+        assert isinstance(lookup.key, int), "Expected `int` key"
+
+        obj_mut = list(obj)
+        obj_mut[lookup.key] = value
+
+        return tuple(obj)
+
+    if isinstance(obj, dict):
+        obj[lookup.key] = value
+        return obj
+
+    raise TypeError(f"Cannot set lookup on `{type(obj)}`")
+
+
+@typecheck
+@dataclasses.dataclass(frozen=True)
+class PathLookup:
+    lookups: Sequence[ItemLookup | AttrLookup]
+
+    @overload
+    def __getitem__(self, key: int) -> ItemLookup | AttrLookup: ...
+
+    @overload
+    def __getitem__(self, key: slice) -> Self: ...
+
+    def __getitem__(self, key: int | slice) -> Self | ItemLookup | AttrLookup:
+        if isinstance(key, int):
+            return self.lookups[key]
+
+        assert isinstance(key, slice), "Expected `int` or `slice`"
+        return type(self)(self.lookups[key])
+
+    def __len__(self) -> int:
+        return len(self.lookups)
+
+    def __iter__(self):
+        return iter(self.lookups)
+
+    def __reversed__(self):
+        return reversed(self.lookups)
+
+    def __repr__(self) -> str:
+        return "obj" + "".join(map(str, self.lookups))
+
+
+@typecheck
+def deref(obj: Any, /) -> Any:
+    paths: dict[int, PathLookup] = {}
+
+    def dfs(obj_, /, path: PathLookup):
+        if id(obj_) in paths:
+            return paths[id(obj_)]
+
+        paths[id(obj_)] = path
+
+        # perform shallow copy before modyfing the object
+        obj_ = copy.copy(obj_)
+
+        for lookup in get_lookups(obj_):
+            val = get_with_lookup(obj_, lookup)
+            val = dfs(val, PathLookup((*path, lookup)))
+            obj_ = set_with_lookup(obj_, lookup, val)
+
+        return obj_
+
+    return dfs(obj, PathLookup(()))
+
+
+@typecheck
+def get_lookup_deep(
+    obj: Any,
+    /,
+    lookup_path: PathLookup,
+) -> Any:
+    for item in lookup_path.lookups:
+        obj = get_with_lookup(obj, item)
+
+    return obj
+
+
+@typecheck
+def dfs_map(obj: Any, fun: Callable[[PathLookup, Any], Any], /):
+    obj = deref(obj)
+
+    def dfs(obj_: Any, path: PathLookup):
+        if isinstance(obj_, PathLookup):
+            return obj_
+
+        obj_ = copy.copy(obj_)
+
+        for lookup in get_lookups(obj_):
+            val = get_with_lookup(obj_, lookup)
+            val = dfs(val, PathLookup((*path, lookup)))
+            obj_ = set_with_lookup(obj_, lookup, val)
+
+        obj_ = fun(path, obj_)
+        return obj_
+
+    obj = dfs(obj, PathLookup(()))
+    return reref(obj)
+
+
+@typecheck
+def dfs_copy(obj_, /):
+    if isinstance(obj_, PathLookup):
+        return obj_
+
+    obj_ = copy.copy(obj_)
+
+    for lookup in get_lookups(obj_):
+        val = get_with_lookup(obj_, lookup)
+        val = dfs_copy(val)
+        obj_ = set_with_lookup(obj_, lookup, val)
+
+    return obj_
+
+
+@typecheck
+def reref(obj: Any, /):
+    # can perform a deep copy, since there are no reference cycles
+    obj = dfs_copy(obj)
+
+    def dfs(obj_, path: PathLookup):
+        if isinstance(obj_, PathLookup):
+            return get_lookup_deep(obj, obj_)
+
+        for lookup in get_lookups(obj_):
+            val = get_with_lookup(obj_, lookup)
+            val = dfs(val, PathLookup((*path, lookup)))
+            obj_ = set_with_lookup(obj_, lookup, val)
+
+        return obj_
+
+    return dfs(obj, PathLookup(()))
+
+
+SLOT = None
+
+
+@typecheck
+def flatten(obj: Any, /):
+    obj = deref(obj)
+    leaves: dict[PathLookup, Any] = {}
+
+    def dfs(obj_: Any, /, path: PathLookup):
+        if isinstance(obj_, PathLookup):
+            return obj_
+
+        if not get_lookups(obj_):
+            leaves[path] = obj_
+            return SLOT
+
+        for lookup in get_lookups(obj_):
+            val = get_with_lookup(obj_, lookup)
+            val = dfs(val, PathLookup((*path, lookup)))
+            obj_ = set_with_lookup(obj_, lookup, val)
+
+        return obj_
+
+    return leaves, dfs(obj, PathLookup(()))
+
+
+@typecheck
+def unflatten(leaves, obj: Any, /):
+    obj = dfs_copy(obj)
+
+    def dfs(obj: Any, path: PathLookup):
+        if isinstance(obj, PathLookup):
+            return obj
+
+        if obj is SLOT:
+            return leaves[path]
+
+        for lookup in get_lookups(obj):
+            val = get_with_lookup(obj, lookup)
+            val = dfs(val, PathLookup((*path, lookup)))
+            obj = set_with_lookup(obj, lookup, val)
+
+        return obj
+
+    obj = dfs(obj, PathLookup(()))
+    return reref(obj)
+
+
+@typecheck
+def _attempt_hash(obj: Any, /) -> int:
+    lookups = get_lookups(obj)
+
+    if len(lookups) == 0:
+        return hash(obj)
+
+    hashes: list[Hashable] = [hash(type(obj))]
+
+    for lookup in lookups:
+        val = get_with_lookup(obj, lookup)
+        hashes.append((hash(lookup), _attempt_hash(val)))
+
+    return hash(tuple(hashes))
+
+
+@typecheck
+@dataclasses.dataclass(frozen=True)
+class AuxData:
+    struct: Any
+    static: Any
+    active_keys: Any
+
+    def __hash__(self) -> int:
+        return _attempt_hash(self)
