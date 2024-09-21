@@ -28,6 +28,8 @@ model = fj.Linear(key_model, 1)
 x_hat = jnp.linspace(-3, 3, 100)[:, None]
 model(x_hat)
 
+# print(model)
+
 
 def loss(model, x, y):
     # y_hat = (model * x).sum(axis=-1, keepdims=True)
@@ -41,31 +43,35 @@ def loss(model, x, y):
 #     return model - 0.5 * grad
 
 
-opt = fj.SGD(0.5)
+opt = fj.SGD(1e-3)
 # minimize = jax.jit(opt.minimize)
 
 
-@jax.jit
-def identity(x):
-    print("recompiling")
-    return x
+# @jax.jit
+# def identity(x):
+#     print("recompiling")
+#     return x
 
 
-for _ in range(4):
-    # model = sgd_step(model, x, y)
-    # model, _ = opt.minimize(loss, model, x, y)
+for i in trange(1024):
+    #     # model = sgd_step(model, x, y)
+    model, loss_val = opt.minimize(loss, model, x, y)
 
-    leaves, struct = jtu.tree_flatten(model)
-    print(hash(struct))
-    print([(leaf.dtype, leaf.shape) for leaf in leaves])
+    if i % 100 == 0:
+        print(loss_val)
 
-    # struct
 
-    # print(hash(struct), hash(opt), hash(loss))
-    model = identity(model)
+#     leaves, struct = jtu.tree_flatten(model)
+#     print(hash(struct))
+#     print([(leaf.dtype, leaf.shape) for leaf in leaves])
+
+#     # struct
+
+#     # print(hash(struct), hash(opt), hash(loss))
+#     model = identity(model)
 
 
 # y_hat = model(x_hat)
 # plt.plot(x_hat, y_hat, color="green")
 
-# model.weight
+model.weight

@@ -1,12 +1,13 @@
-from typing import Callable, Any, TypeVar
-from jaxtyping import Float, Array
-
+import abc
 import functools
+from typing import Any, Callable, TypeVar
+
 import jax
 import jax.numpy as jnp
+import jax.tree_util as jtu
+from jaxtyping import Array, Float
 
-from ._module import Module, flatten, unflatten, PathLookup
-
+from ._module import Module, PathLookup, flatten, unflatten
 
 T = TypeVar("T", bound=Module | list | tuple | dict)
 
@@ -18,7 +19,7 @@ def filter_module(
     dict[PathLookup, Float[Array, "..."]],
     Callable[[dict[PathLookup, Float[Array, "..."]]], T],
 ]:
-    flat, aux = flatten(module)
+    flat = flatten(module)
 
     active = {}
     static = {}
@@ -31,8 +32,7 @@ def filter_module(
         static[key] = value
 
     def reconstruct(active):
-        flat = {**static, **active}
-        return unflatten(flat, aux)
+        return unflatten({**static, **active})
 
     return active, reconstruct
 
@@ -47,7 +47,6 @@ def _loss_gradient(
     dict[PathLookup, Float[Array, "..."]],
     Float[Array, ""],
 ]:
-
     def include_(key, value):
         if not isinstance(value, jax.Array):
             return False
@@ -97,14 +96,15 @@ class Optimizer(Module):
         )
 
         grads = self(grads)
-        flat, aux = flatten(model)
+        flat = flatten(model)
 
         for key, value in grads.items():
             flat[key] = flat[key] - value
 
-        model = unflatten(flat, aux)
+        model = unflatten(flat)
         return model, loss_val
 
+    @abc.abstractmethod
     def __call__(
         self,
         grads: dict[PathLookup, Float[Array, "..."]],

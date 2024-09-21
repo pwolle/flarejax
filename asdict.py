@@ -1,30 +1,37 @@
 import abc
 import copy
 import dataclasses
-from typing import (
-    Any,
-    Callable,
-    Hashable,
-    Self,
-    Sequence,
-    TypeAlias,
-    overload,
-)
+from pprint import pprint
+from typing import Any, Hashable, Sequence, Self
 
 import jax
 import jax.tree_util as jtu
 
-from ._tcheck import typecheck
+
+@dataclasses.dataclass(frozen=True)
+class ItemLookup:
+    key: Hashable | int
+
+    def __repr__(self) -> str:
+        return f"[{self.key}]"
 
 
-__all__ = [
-    "Module",
-    "flatten",
-    "unflatten",
-]
+@dataclasses.dataclass(frozen=True)
+class AttrLookup:
+    key: str
+
+    def __repr__(self) -> str:
+        return f".{self.key}"
 
 
-@typecheck
+@dataclasses.dataclass(frozen=True)
+class PathLookup:
+    path: Sequence[ItemLookup | AttrLookup]
+
+    def __repr__(self) -> str:
+        return "obj" + "".join(map(str, self.path))
+
+
 class PyTreeMeta(abc.ABCMeta, type):
     def __init__(
         cls,
@@ -37,7 +44,6 @@ class PyTreeMeta(abc.ABCMeta, type):
         jtu.register_pytree_node_class(cls)
 
 
-@typecheck
 class PyTreeBase(metaclass=PyTreeMeta):
     @abc.abstractmethod
     def tree_flatten(self: Self):
@@ -51,7 +57,6 @@ class PyTreeBase(metaclass=PyTreeMeta):
         raise NotImplementedError(error)
 
 
-@typecheck
 class Module(PyTreeBase):
     def tree_flatten(self: Self):
         flat = flatten(self)
@@ -79,33 +84,6 @@ class Module(PyTreeBase):
         static = dict(static)
         active = dict(zip(active_keys, active))
         return unflatten(static | active)
-
-    def __repr__(self) -> str:
-        return summary(self)
-
-
-@dataclasses.dataclass(frozen=True)
-class ItemLookup:
-    key: Hashable | int
-
-    def __repr__(self) -> str:
-        return f"[{self.key}]"
-
-
-@dataclasses.dataclass(frozen=True)
-class AttrLookup:
-    key: str
-
-    def __repr__(self) -> str:
-        return f".{self.key}"
-
-
-@dataclasses.dataclass(frozen=True)
-class PathLookup:
-    path: Sequence[ItemLookup | AttrLookup]
-
-    def __repr__(self) -> str:
-        return "obj" + "".join(map(str, self.path))
 
 
 TYPE_KEY = AttrLookup("__class__")
@@ -291,53 +269,108 @@ def unflatten(obj_flat: dict[PathLookup, Any]) -> Any:
     return obj_reco
 
 
-def array_summary(x: jax.Array, /) -> str:
-    dtype = x.dtype.str[1:]
-    shape = list(x.shape)
+from jaxtyping import Array, Float, PRNGKeyArray
 
-    head = f"{dtype}{shape}"
-    return head
+import jax.random as jrn
+import jax.numpy as jnp
 
 
-def _build_summary(head, body, tail):
-    body = ",\n".join(body)
-    body = body.replace("\n", "\n  ")
+class Linear(Module):
+    weight: Float[Array, "dim_in dim"] | None
 
-    if body:
-        body = f"\n  {body},\n"
+    def __init__(self, key: PRNGKeyArray, dim: int) -> None:
+        self.key = key
+        self.dim = dim
 
-    return head + body + tail
+        self.weight = None
+
+    def _build(self, x) -> None:
+        dim_in = x.shape[-1]
+        glorot = dim_in**-0.5
+
+        self.weight = jrn.uniform(
+            self.key,
+            (dim_in, self.dim),
+            dtype=x.dtype,
+            minval=-glorot,
+            maxval=+glorot,
+        )
+
+    def __call__(
+        self,
+        x: Float[Array, "*batch dim_in"],
+    ) -> Float[Array, "*batch {self.dim}"]:
+        if self.weight is None:
+            self._build(x)
+
+        assert self.weight is not None
+        return x @ self.weight
+
+    @property
+    def dim_in(self) -> int | None:
+        if self.weight is None:
+            return None
+
+        return self.weight.shape[0]
+
+    def __repr__(self) -> str:
+        head = f"{type(self).__name__}("
+        body = f"dim_in={self.dim_in}, dim={self.dim})"
+        tail = ")"
+        return head + body + tail
 
 
-def summary(obj: Any, /) -> str:
-    if not isinstance(obj, (Module, tuple, list, dict, jax.Array)):
-        return str(obj)
+@jax.jit
+def identity(x):
+    print(f"compiling for {x}")
+    return x
 
-    if isinstance(obj, jax.Array):
-        return array_summary(obj)
 
-    if isinstance(obj, list):
-        body = [summary(value) for value in obj]
-        return _build_summary("[", body, "]")
+def main():
+    key = jrn.PRNGKey(0)
 
-    if isinstance(obj, tuple):
-        body = [summary(value) for value in obj]
-        return _build_summary("(", body, ")")
+    model = Linear(key, 10)
+    model(jnp.zeros((128,)))
 
-    if isinstance(obj, dict):
-        body = [f"{key}: {summary(value)}" for key, value in obj.items()]
-        return _build_summary("{", body, "}")
+    for _ in range(5):
+        model = identity(model)
 
-    assert isinstance(obj, Module)
 
-    keys = []
-    if hasattr(obj, "__slots__"):
-        keys.extend(obj.__slots__)  # type: ignore
+def main_():
+    # obj = [1, 2, [3, 4], 5, [6, 7]]
+    # obj = [1, 2, [3, 4], 5, [6, 7]]
+    # obj.append(obj)
+    # obj.insert(0, obj[2])
+    # obj[3].append(obj[4])
+    # obj[5].append(obj[2])
 
-    if hasattr(obj, "__dict__"):
-        keys.extend(obj.__dict__.keys())
+    obj = [1, 2, [3, 4], 5, [6, 7]]
+    obj.append(obj)
+    obj[2].append(obj[4])
+    obj[4].append(obj[2])
 
-    keys = filter(lambda key: not key.startswith("__"), keys)
+    obj_dict = object_to_dicts(obj)
+    obj_flat = flatten_dict(obj_dict)  # type: ignore
+    obj_deep = unflatten_dict(obj_flat)
 
-    body = [f"{key}={summary(getattr(obj, key))}" for key in keys]
-    return _build_summary(f"{type(obj).__name__}(", body, ")")
+    obj_reco = dicts_to_object(obj_deep)
+
+    print()
+    pprint(obj)
+    print()
+
+    pprint(obj_dict)
+    print()
+
+    pprint(obj_flat)
+    print()
+
+    pprint(obj_deep)
+    print()
+
+    pprint(obj_reco)
+    print()
+
+
+if __name__ == "__main__":
+    main()

@@ -51,11 +51,11 @@ class Linear(Module):
 
         return self.weight.shape[0]
 
-    def __repr__(self) -> str:
-        head = f"{type(self).__name__}("
-        body = f"dim_in={self.dim_in}, dim={self.dim})"
-        tail = ")"
-        return head + body + tail
+    # def __repr__(self) -> str:
+    #     head = f"{type(self).__name__}("
+    #     body = f"dim_in={self.dim_in}, dim={self.dim})"
+    #     tail = ")"
+    #     return head + body + tail
 
 
 class Bias(Module):
@@ -95,11 +95,11 @@ class Bias(Module):
 
         return self.bias.shape[0]
 
-    def __repr__(self) -> str:
-        head = f"{type(self).__name__}("
-        body = f"dim={self.dim})"
-        tail = ")"
-        return head + body + tail
+    # def __repr__(self) -> str:
+    #     head = f"{type(self).__name__}("
+    #     body = f"dim={self.dim})"
+    #     tail = ")"
+    #     return head + body + tail
 
 
 @jaxtyped(typechecker=typecheck)

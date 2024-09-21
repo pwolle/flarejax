@@ -6,7 +6,7 @@ import jax.numpy as jnp
 import jax.random as jrn
 
 import jax.tree_util as jtu
-import flarejax as fj
+import flarejaxflex as fj
 
 import functools
 
