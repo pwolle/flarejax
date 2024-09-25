@@ -1,31 +1,48 @@
 import abc
 import copy
 import dataclasses
-from typing import (
-    Any,
-    Callable,
-    Hashable,
-    Self,
-    Sequence,
-    TypeAlias,
-    overload,
-)
+from types import MethodType
+from typing import Any, Hashable, Self
 
 import jax
 import jax.tree_util as jtu
 
 from ._tcheck import typecheck
 
-
 __all__ = [
     "Module",
     "flatten",
     "unflatten",
+    "PathLookup",
+    "ItemLookup",
+    "AttrLookup",
 ]
 
 
 @typecheck
 class PyTreeMeta(abc.ABCMeta, type):
+    """
+    Meta class that registers all its subclasses with JAX PyTrees.
+    """
+
+    def __new__(cls, name, bases, dct):
+        for key, value in dct.items():
+            if name in ["PyTreeBase", "Module", "MethodWrap"]:
+                continue
+
+            if not callable(value):
+                continue
+
+            if key in ["tree_flatten", "tree_unflatten"]:
+                continue
+
+            if key.startswith("__"):
+                continue
+
+            dct[key] = MethodDescriptor(value)
+
+        return super().__new__(cls, name, bases, dct)
+
     def __init__(
         cls,
         name: str,
@@ -39,6 +56,12 @@ class PyTreeMeta(abc.ABCMeta, type):
 
 @typecheck
 class PyTreeBase(metaclass=PyTreeMeta):
+    """
+    Abstract base class for PyTree classes.
+    The `tree_flatten` method for deconstructing and the `tree_unflatten` for
+    reconstructing it must be implemented.
+    """
+
     @abc.abstractmethod
     def tree_flatten(self: Self):
         error = "Abstract method 'tree_flatten' must be implemented."
@@ -53,6 +76,11 @@ class PyTreeBase(metaclass=PyTreeMeta):
 
 @typecheck
 class Module(PyTreeBase):
+    """
+    Base class for all modules. Modules can be used to implement parameterized
+    functions like neural networks.
+    """
+
     def tree_flatten(self: Self):
         flat = flatten(self)
 
@@ -83,9 +111,31 @@ class Module(PyTreeBase):
     def __repr__(self) -> str:
         return summary(self)
 
+    # def __getattribute__(self, name: str) -> Any:
+    #     value = super().__getattribute__(name)
+
+    #     if isinstance(value, MethodType):
+    #         return Method(self, name)
+
+    #     return value
+
+
+@dataclasses.dataclass(repr=False)
+class Method(Module):
+    module: Module
+    method: str
+
+    def __call__(self, *args, **kwargs):
+        method = getattr(self.module.__class__, self.method)
+        return method(self.module, *args, **kwargs)
+
 
 @dataclasses.dataclass(frozen=True)
 class ItemLookup:
+    """
+    Describes how to lookup an item in a dictionary or list or tuple.
+    """
+
     key: Hashable | int
 
     def __repr__(self) -> str:
@@ -94,6 +144,10 @@ class ItemLookup:
 
 @dataclasses.dataclass(frozen=True)
 class AttrLookup:
+    """
+    Describes how to lookup an attribute in a class.
+    """
+
     key: str
 
     def __repr__(self) -> str:
@@ -102,7 +156,11 @@ class AttrLookup:
 
 @dataclasses.dataclass(frozen=True)
 class PathLookup:
-    path: Sequence[ItemLookup | AttrLookup]
+    """
+    Describes how to lookup a value in a nested structure.
+    """
+
+    path: tuple[ItemLookup | AttrLookup, ...]
 
     def __repr__(self) -> str:
         return "obj" + "".join(map(str, self.path))
@@ -175,9 +233,13 @@ def dicts_to_object(
     refs = refs or {}
 
     if isinstance(dicts, PathLookup):
+        # The reference might not exist, this can be the case if there is a
+        # reference cycle where the reference would point to a tuple from
+        # one of its children (or children's children, etc.)
         if dicts in refs:
             return refs[dicts]
 
+        # In this case the best we can do is to return a placeholder
         return dicts
 
     if not isinstance(dicts, dict):
@@ -218,9 +280,8 @@ def dicts_to_object(
 
         result = tuple(result)
 
-        # can only cache this after the the tuple is created
-        # this is sound because a tuple cannot contain a reference to itself
-        # by construction, because of it immutable nature
+        # The result can only be stored after the tuple is created,
+        # because the tupe is immutable
         refs[path] = result
         return result
 
@@ -249,12 +310,12 @@ def tuples_to_dict(t: tuple) -> dict[Hashable, Any]:
 
 def flatten_dict(
     nested_dict: dict,
-    path: PathLookup = PathLookup(()),
-) -> dict[PathLookup, Any]:
+    path=(),
+) -> dict:
     items = {}
 
     for key, value in nested_dict.items():
-        new_path = PathLookup((*path.path, key))
+        new_path = (*path, key)
 
         if isinstance(value, dict):
             items.update(flatten_dict(value, new_path))
@@ -265,28 +326,69 @@ def flatten_dict(
     return dict(items)
 
 
-def unflatten_dict(flat_dict: dict[PathLookup, Any]) -> dict:
+def unflatten_dict(flat_dict: dict) -> dict:
     nested_dict = {}
 
     for path, value in flat_dict.items():
         current = nested_dict
 
-        for key in path.path[:-1]:
-            current = current.setdefault(key, {})
+        for key in path[:-1]:
+            if key not in current:
+                current[key] = {}
 
-        current[path.path[-1]] = value
+            current = current[key]
+
+        current[path[-1]] = value
 
     return nested_dict
 
 
 def flatten(obj: Any) -> dict[PathLookup, Any]:
+    """
+    Flatten an object into a dictionary of paths and values.
+    Values can be the leaves of the object, references to other parts of the
+    original object, or information about the types of non-leaf nodes.
+
+    This function is especially useful in combination with `unflatten` to
+    reconstruct an object from the flattened representation.
+
+    Parameters
+    ---
+    obj: Any
+        Object to flatten.
+
+    Returns
+    ---
+    dict[PathLookup, Any]
+        Flattened object. The Pathlookup describes how to get the leaf value
+        from the original object.
+    """
     obj_dict = object_to_dicts(obj)
-    obj_flat = flatten_dict(obj_dict)  # type: ignore
-    return obj_flat
+
+    assert isinstance(obj_dict, dict)
+    obj_flat = flatten_dict(obj_dict)
+
+    obj_path = {PathLookup(k): v for k, v in obj_flat.items()}
+    return obj_path
 
 
-def unflatten(obj_flat: dict[PathLookup, Any]) -> Any:
+def unflatten(obj_path: dict[PathLookup, Any]) -> Any:
+    """
+    Reconstruct an object that was flattened with `flatten`.
+
+    Parameters
+    ---
+    obj_path: dict[PathLookup, Any]
+        Flattened object.
+
+    Returns
+    ---
+    Any
+        Reconstructed object.
+    """
+    obj_flat = {k.path: v for k, v in obj_path.items()}
     obj_deep = unflatten_dict(obj_flat)
+
     obj_reco = dicts_to_object(obj_deep)
     return obj_reco
 
@@ -310,6 +412,20 @@ def _build_summary(head, body, tail):
 
 
 def summary(obj: Any, /) -> str:
+    """
+    Convert an object to a human-readable string representation, by formatting
+    it and replacing arrays by their shape and dtype.
+
+    Parameters
+    ---
+    obj: Any
+        Object to summarize.
+
+    Returns
+    ---
+    str
+        Human-readable string representation of the object.
+    """
     if not isinstance(obj, (Module, tuple, list, dict, jax.Array)):
         return str(obj)
 
@@ -341,3 +457,31 @@ def summary(obj: Any, /) -> str:
 
     body = [f"{key}={summary(getattr(obj, key))}" for key in keys]
     return _build_summary(f"{type(obj).__name__}(", body, ")")
+
+
+class MethodWrap(Module):
+    def __init__(self, module, method):
+        self.module = module
+        self.method = method
+
+    @property
+    def __name__(self):
+        return self.method.__name__
+
+    @property
+    def __self__(self):
+        return self.module
+
+    def __call__(self, *args, **kwargs):
+        return self.method(self.module, *args, **kwargs)
+
+
+class MethodDescriptor:
+    def __init__(self, func):
+        self.func = func
+
+    def __get__(self, instance, _):
+        if instance is None:
+            return self.func
+
+        return MethodWrap(instance, self.func)

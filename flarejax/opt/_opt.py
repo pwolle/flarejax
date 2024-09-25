@@ -1,18 +1,25 @@
 import abc
-import functools
-from typing import Any, Callable, TypeVar
+import copy
+from typing import Any, Callable, Self, TypeVar
 
 import jax
 import jax.numpy as jnp
-import jax.tree_util as jtu
 from jaxtyping import Array, Float
 
-from ._module import Module, PathLookup, flatten, unflatten
+from .._filter import filter_jit
+from .._module import Module, PathLookup, flatten, unflatten
+from .._tcheck import typecheck
+from .._serial import saveable
+
+__all__ = [
+    "Optimizer",
+]
 
 T = TypeVar("T", bound=Module | list | tuple | dict)
 
 
-def filter_module(
+@typecheck
+def _filter_and_reconstruct(
     module: T,
     include: Callable[[PathLookup, Array], bool],
 ) -> tuple[
@@ -37,6 +44,7 @@ def filter_module(
     return active, reconstruct
 
 
+@typecheck
 def _loss_gradient(
     loss: Callable[..., Float[Array, ""]],
     model: T,
@@ -57,7 +65,7 @@ def _loss_gradient(
         result = include(key, value)
         return result
 
-    params, reconstruct = filter_module(
+    params, reconstruct = _filter_and_reconstruct(
         model,
         lambda k, v: include(k, v) and include_(k, v),
     )
@@ -71,53 +79,88 @@ def _loss_gradient(
     return model, grads, loss_val
 
 
+@saveable("flarejax.opt.Optimizer")
 class Optimizer(Module):
-    include: Callable[[PathLookup, Array], bool]
-
-    def __new__(cls, *args, **kwargs):
-        obj = super().__new__(cls)
-        obj.include = lambda *_: True
-        return obj
-
-    @functools.partial(jax.jit, static_argnames=("loss",))
+    @filter_jit
     def minimize(
         self,
         loss: Callable[..., Float[Array, ""]],
         model: T,
         *args: Any,
-    ) -> tuple[T, Float[Array, ""]]:
-        print(model)
+        **kwargs: Any,
+    ) -> tuple[Self, T, Float[Array, ""]]:
+        return self.minimize_no_jit(loss, model, *args, **kwargs)
 
+    @property
+    def _include(self):
+        if not hasattr(self, "include"):
+            return lambda *_: True
+
+        return self.include  # type: ignore
+
+    def minimize_no_jit(
+        self,
+        loss: Callable[..., Float[Array, ""]],
+        model: T,
+        *args: Any,
+        **kwargs: Any,
+    ) -> tuple[Self, T, Float[Array, ""]]:
         model, grads, loss_val = _loss_gradient(
             loss,
             model,
             *args,
-            include=self.include,
+            **kwargs,
+            include=self._include,
         )
 
-        grads = self(grads)
+        grads = self._call_map(grads)
         flat = flatten(model)
 
         for key, value in grads.items():
             flat[key] = flat[key] - value
 
         model = unflatten(flat)
-        return model, loss_val
+        return self, model, loss_val
+
+    @typecheck
+    def _call_map(
+        self, grads: dict[PathLookup, Float[Array, "..."]]
+    ) -> dict[PathLookup, Float[Array, "..."]]:
+        # shallow copy to avoid modifying the original dictionary
+        grads = copy.copy(grads)
+
+        for key, value in grads.items():
+            grads[key] = self(key, value)
+
+        return grads
 
     @abc.abstractmethod
     def __call__(
         self,
-        grads: dict[PathLookup, Float[Array, "..."]],
-    ) -> dict[PathLookup, Float[Array, "..."]]:
+        key: PathLookup,
+        grad: Float[Array, "*s"],
+    ) -> Float[Array, "*s"]:
         raise NotImplementedError
 
 
-class SGD(Optimizer):
-    def __init__(self, lr: float) -> None:
-        self.lr = lr
+class Chain(Optimizer):
+    @typecheck
+    def __init__(
+        self,
+        *optimizers: Callable[
+            [PathLookup, Float[Array, "*s"]],
+            Float[Array, "*s"],
+        ],
+    ):
+        self.optimizers = optimizers
 
-    def __call__(self, grads) -> dict[PathLookup, Float[Array, "..."]]:
-        for key, value in grads.items():
-            grads[key] = value * self.lr
+    @typecheck
+    def __call__(
+        self,
+        key: PathLookup,
+        grad: Float[Array, "*s"],
+    ) -> Float[Array, "*s"]:
+        for opt in self.optimizers:
+            grad = opt(key, grad)
 
-        return grads
+        return grad

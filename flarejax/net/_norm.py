@@ -1,15 +1,23 @@
-import jax.numpy as jnp
 import jax.lax as lax
+import jax.numpy as jnp
 from jaxtyping import Array, Float
 
-from ._module import Module
+from .._module import Module
+from .._serial import saveable
 
 
+__all__ = [
+    "LayerNorm",
+    "RMSNorm",
+]
+
+
+@saveable("flarejax.LayerNorm")
 class LayerNorm(Module):
     weight: Float[Array, "dim"] | None
     bias: Float[Array, "dim"] | None
 
-    def __init__(self, eps: float = 1e-4, axis: int = -1) -> None:
+    def __init__(self, eps: float = 1e-6, axis: int = -1) -> None:
         self.eps = eps
         self.axis = axis
 
@@ -40,11 +48,12 @@ class LayerNorm(Module):
         return x
 
 
+@saveable("flarejax.RMSNorm")
 class RMSNorm(Module):
     weight: Float[Array, "dim"] | None
     bias: Float[Array, "dim"] | None
 
-    def __init__(self, eps: float = 1e-4, axis: int = -1) -> None:
+    def __init__(self, eps: float = 1e-6, axis: int = -1) -> None:
         self.eps = eps
         self.axis = axis
 
