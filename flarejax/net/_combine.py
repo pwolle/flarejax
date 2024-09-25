@@ -1,3 +1,7 @@
+"""
+Combining neural network modules.
+"""
+
 from typing import Callable, Self
 
 import jax
@@ -20,6 +24,8 @@ __all__ = [
 class Sequential(Module):
     """
     Call a sequence of modules in order.
+    The first argument is updated, while the *args and **kwargs are passed to
+    each module.
 
     Parameters
     ---
@@ -44,6 +50,8 @@ class Sequential(Module):
 class Add(Sequential):
     """
     Add the output of a sequence of modules to the input.
+    The first argument is updated, while the *args and **kwargs are passed to
+    each module.
 
     Parameters
     ---
@@ -63,6 +71,8 @@ class Add(Sequential):
 class Multiply(Sequential):
     """
     Multiply the output of a sequence of modules by the input.
+    The first argument is updated, while the *args and **kwargs are passed to
+    each module.
 
     Parameters
     ---
@@ -81,7 +91,7 @@ class Multiply(Sequential):
 @saveable("flarejax.Constant")
 class Constant(Module):
     """
-    Return a constant value.
+    Return a constant value. Ignores all inputs.
 
     Parameters
     ---
@@ -133,7 +143,7 @@ class Constant(Module):
 @saveable("flarejax.Identity")
 class Identity(Module):
     """
-    Return the input.
+    Return the input. Ignores *args and **kwargs.
     Useful combining modules, e.g. creating a simple residual
     connection by combining a module with an Identity module using Add.
 

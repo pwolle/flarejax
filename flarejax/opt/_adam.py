@@ -12,6 +12,35 @@ __all__ = [
 
 @saveable("falrejax.opt.Adam")
 class Adam(Optimizer):
+    """
+    Impelementation of the Adam optimizer [1].
+    The Adam optimizer works by keeping a running exponential moving average of
+    the first and second moments of the gradient, and using these to update the
+    parameters.
+
+    Parameters
+    ---
+    learning_rate: float
+        The learning rate to use for the optimizer. A final scalar multiplier
+        for the update step.
+
+    beta1: float
+        The exponential decay rate for the first moment estimate.
+
+    beta2: float
+        The exponential decay rate for the second moment estimate.
+
+    eps: float
+        Small value to prevent division by zero.
+
+    eps_root: float
+        Small value to prevent division by zero in the square root.
+
+    References
+    ---
+    [1] https://arxiv.org/abs/1412.6980
+    """
+
     def __init__(
         self,
         learning_rate: float,
@@ -42,8 +71,8 @@ class Adam(Optimizer):
         key: PathLookup,
         grad: Float[Array, "*s"],
     ) -> Float[Array, "*s"]:
-        self.t = self.t + 1
         self._build(key, grad)
+        self.t = self.t + 1
 
         self.m[key] = self.beta1 * self.m[key] + (1 - self.beta1) * grad
         self.v[key] = self.beta2 * self.v[key] + (1 - self.beta2) * grad**2

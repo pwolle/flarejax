@@ -3,12 +3,13 @@ import json
 import jax
 import jax.nn as jnn
 import jax.numpy as jnp
+import numpy as onp
 
 from ._module import (
     AttrLookup,
     ItemLookup,
-    Module,
     MethodWrap,
+    Module,
     PathLookup,
     flatten,
     unflatten,
@@ -25,19 +26,44 @@ _SAVEABLE_TYPES: dict[str, type] = {}
 _SAVEABLE_TYPES_INV: dict[type, str] = {}
 
 
-def saveable(name_maybe: str | None = None):
-    def decorator(cls):
-        name = name_maybe or cls.__name__
-        name = f"__TYPE__:{name}"
-        _SAVEABLE_TYPES[name] = cls
-        _SAVEABLE_TYPES_INV[cls] = name
-        return cls
+def saveable(name, warn: bool = True):
+    """
+    Store an object in a global registry, such that it can be serialized and
+    deserialized by the `save` and `load` functions.
+
+    Parameters
+    ---
+    name: str
+        The name to use for the object in the registry.
+
+    warn: bool
+        Whether to warn if the object is already in the registry.
+
+    Returns
+    ---
+    decorator: Callable
+        A decorator that can be used to store the object in the registry.
+    """
+
+    def decorator(obj):
+        key = f"__TYPE__:{name}"
+
+        if key in _SAVEABLE_TYPES and warn:
+            print("Warning: Overwriting existing saveable type")
+
+        _SAVEABLE_TYPES[key] = obj
+        _SAVEABLE_TYPES_INV[obj] = key
+
+        return obj
 
     return decorator
 
 
 class NotSerializableError(TypeError):
-    pass
+    """
+    Error raised when attempting to serialize an object that is not
+    serializable.
+    """
 
 
 # indicate that the value is an array and is therefore saved separately
@@ -45,19 +71,44 @@ _ARRAY = "__ARRAY_PLACEHOLDER__"
 
 
 def _lookup_to_str(lookup: ItemLookup | AttrLookup) -> dict:
-    assert isinstance(lookup.key, (int, str))
+    """
+    Convert a lookup object to a dictionary that can be serialized.
+    """
+    key = lookup.key
+
+    if not isinstance(key, (int, str)):
+        if key not in _SAVEABLE_TYPES_INV:
+            error = f"Type {key} is not serializable"
+            raise NotSerializableError(error)
+
+        key = _SAVEABLE_TYPES_INV[key]
+
     lookup_type = {ItemLookup: "item", AttrLookup: "attr"}[type(lookup)]
-    return {"key": lookup.key, "type": lookup_type}
+    return {"key": key, "type": lookup_type}
 
 
 def _str_to_lookup(data) -> ItemLookup | AttrLookup:
+    """
+    Inverse of `_lookup_to_str`.
+    """
     key = data["key"]
+
+    if key in _SAVEABLE_TYPES:
+        key = _SAVEABLE_TYPES[key]
+
     lookup_type = data["type"]
     return {"item": ItemLookup, "attr": AttrLookup}[lookup_type](key)
 
 
-def save(model, save_path: str):
-    flat = flatten(model)
+def save(module, save_path: str):
+    """
+    Save a module to a file. All leaves, types and lookups in the module must
+    be serializable, i.e. jax or numpy array, int, float, bool, str, None, or
+    nested versions of dicts, lists, tuples.
+    Values and types that were added to the registry using the `saveable`
+    decorator can also be serialized.
+    """
+    flat = flatten(module)
 
     keys = []
     arrs = []
@@ -67,7 +118,7 @@ def save(model, save_path: str):
         key = [_lookup_to_str(k) for k in key.path]
         keys.append(key)
 
-        if isinstance(val, jax.Array):
+        if isinstance(val, (jax.Array, onp.ndarray)):
             arrs.append(val)
             sims.append(_ARRAY)
             continue
@@ -127,13 +178,18 @@ def load(load_path: str):
     return unflatten(flat)
 
 
+# make the regular python types serializable
 saveable("list")(list)
 saveable("dict")(dict)
 saveable("tuple")(tuple)
 
+# make the module types from ._module serializable, since we cannot make
+# them serializable in the module itself, because this would create a
+# circular dependency
 saveable("flarejax.Module")(Module)
 saveable("flarejax.MethodWrap")(MethodWrap)
 
+# make common activation functions serializable
 saveable("jax.nn.celu")(jnn.celu)
 saveable("jax.nn.elu")(jnn.elu)
 saveable("jax.nn.gelu")(jnn.gelu)
@@ -147,10 +203,8 @@ saveable("jax.nn.log_sigmoid")(jnn.log_sigmoid)
 saveable("jax.nn.log_softmax")(jnn.log_softmax)
 saveable("jax.nn.logsumexp")(jnn.logsumexp)
 saveable("jax.nn.standardize")(jnn.standardize)
-saveable("jax.nn.one_hot")(jnn.one_hot)
 saveable("jax.nn.relu")(jnn.relu)
 saveable("jax.nn.relu6")(jnn.relu6)
-saveable("jax.nn.dot_product_attention")(jnn.dot_product_attention)
 saveable("jax.nn.selu")(jnn.selu)
 saveable("jax.nn.sigmoid")(jnn.sigmoid)
 saveable("jax.nn.soft_sign")(jnn.soft_sign)
@@ -163,7 +217,7 @@ saveable("jax.nn.swish")(jnn.swish)
 saveable("jax.nn.squareplus")(jnn.squareplus)
 saveable("jax.nn.mish")(jnn.mish)
 
-
+# make the jax data types serializable
 saveable("jax.numpy.bool_")(jnp.bool_)
 saveable("jax.numpy.complex64")(jnp.complex64)
 saveable("jax.numpy.complex128")(jnp.complex128)

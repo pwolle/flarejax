@@ -1,3 +1,8 @@
+"""
+Jax transformations as modules. This allows for the benefits of modules 
+(serialization and flattening) to be used with jax transformations.
+"""
+
 import dataclasses
 from typing import Any, Callable, Generic, Hashable, ParamSpec, TypeVar
 
@@ -16,6 +21,8 @@ T = TypeVar("T")
 P = ParamSpec("P")
 
 
+# a function which applies a module to its arguments
+# this is needed to have the jax.jit compilation cache all in one place
 @filter_jit
 def _filter_jit_apply(
     module: Callable[P, T],
@@ -27,6 +34,15 @@ def _filter_jit_apply(
 
 @dataclasses.dataclass
 class Jit(Module, Generic[P, T]):
+    """
+    Call a module with `filter_jit` applied to the `__call__` method.
+
+    Parameters
+    ---
+    module: Callable[P, T]
+        The module to apply `filter_jit` to.
+    """
+
     module: Callable[P, T]
 
     def __call__(self, *args: P.args, **kwargs: P.kwargs) -> T:
@@ -35,6 +51,19 @@ class Jit(Module, Generic[P, T]):
 
 @dataclasses.dataclass
 class Vmap(Module, Generic[P, T]):
+    """
+    Call a module with `jax.vmap` applied to the `__call__` method.
+
+    Parameters
+    ---
+    module: Callable[P, T]
+        The module to apply `jax.vmap` to.
+
+    **kwargs: Any
+        Arguments to pass to `jax.vmap`.
+
+    """
+
     module: Callable[P, T]
     in_axes: int | None | tuple[int, ...] = 0
     out_axes: Any = 0

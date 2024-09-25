@@ -22,6 +22,7 @@ __all__ = [
 class PyTreeMeta(abc.ABCMeta, type):
     """
     Meta class that registers all its subclasses with JAX PyTrees.
+    This class also wraps all methods of the subclass with a `MethodDescriptor`.
     """
 
     def __new__(cls, name, bases, dct):
@@ -57,6 +58,7 @@ class PyTreeMeta(abc.ABCMeta, type):
 class PyTreeBase(metaclass=PyTreeMeta):
     """
     Abstract base class for PyTree classes.
+
     The `tree_flatten` method for deconstructing and the `tree_unflatten` for
     reconstructing it must be implemented.
     """
@@ -78,6 +80,21 @@ class Module(PyTreeBase):
     """
     Base class for all modules. Modules can be used to implement parameterized
     functions like neural networks.
+
+    Modules are PyTrees, which means they can be flattened and unflattened
+    using JAX's tree_util functions.
+
+    The flattening will automatically go through all attributes including slots.
+    Submodules as well as dictionaries, lists, and tuples will also be
+    recursively flattened.
+
+    The flattening and unflattening will respect references within the object,
+    although circular references to tuples are not supported for performance
+    reasons.
+
+    See also `flatten` and `unflatten` to get a flattened representation in
+    the form of a dictionary with descriptions of how to lookup the values as
+    keys.
     """
 
     def tree_flatten(self: Self):
@@ -109,14 +126,6 @@ class Module(PyTreeBase):
 
     def __repr__(self) -> str:
         return summary(self)
-
-    # def __getattribute__(self, name: str) -> Any:
-    #     value = super().__getattribute__(name)
-
-    #     if isinstance(value, MethodType):
-    #         return Method(self, name)
-
-    #     return value
 
 
 @dataclasses.dataclass(repr=False)
@@ -165,6 +174,8 @@ class PathLookup:
         return "obj" + "".join(map(str, self.path))
 
 
+# To be able to reconstruct any object from the flatttened dictionary
+# representation we need to store the types of all of the nodes.
 TYPE_KEY = AttrLookup("__class__")
 
 
@@ -174,24 +185,66 @@ def object_to_dicts(
     path: PathLookup | None = None,
     refs: dict[int, PathLookup] | None = None,
 ):
+    """
+    Convert any object recursively into a tree of nested dictionaries of its
+    children and their types.
+
+    Shared references within the object will be represented by `PathLookup`
+    objects as values that point to the first occurrence of the reference.
+
+    Parameters
+    ---
+    obj: Any
+        Object to convert to a dictionary.
+
+    path: PathLookup, optional
+        Path to the current object in the tree.
+
+    refs: dict[int, PathLookup], optional
+        References to already visited objects.
+
+    Returns
+    ---
+    Any
+        Nested dictionary representation of the object.
+        If the object is a leaf the object ifself will be returned.
+        if the object is in `refs` a `PathLookup` object will be returned.
+    """
     path = path or PathLookup(())
     refs = refs or {}
 
+    # check if the object is already in the references, i.e. has been visited
     if id(obj) in refs:
         return refs[id(obj)]
 
+    # if the object is a leaf, return it
     if not isinstance(obj, (list, tuple, dict, Module)):
         return obj
 
+    # store the path to the object in the references
+    # i.e. mark the current object as visited
     refs[id(obj)] = path
 
     obj_dict = {}
-    obj_dict[TYPE_KEY] = type(obj)
+    obj_dict[TYPE_KEY] = type(obj)  # save the type of the object
 
+    # destructure the object
     if isinstance(obj, dict):
+        # keep a deterministic order of the keys, since this might be relevant
+        # in jax.jit recompilations; this can be done by sorting the keys
+        # by their hashes since dict keys are not guaranteed to be hashable
+
         for key in sorted(obj.keys(), key=hash):
+            # the path to the current child is one level deeper than the
+            # path to the current object
             key_path = PathLookup((*path.path, ItemLookup(key)))
-            obj_dict[ItemLookup(key)] = object_to_dicts(obj[key], key_path, refs)
+
+            # recursively convert the value to a dictionary
+            obj_dict[ItemLookup(key)] = object_to_dicts(
+                obj[key],
+                key_path,
+                refs,
+            )
 
         return obj_dict
 
@@ -238,9 +291,11 @@ def dicts_to_object(
         if dicts in refs:
             return refs[dicts]
 
-        # In this case the best we can do is to return a placeholder
+        # In this case the best we can do is to return a placeholder, i.e.
+        # the path to the reference itself
         return dicts
 
+    # if it is not a dictionary, it must be a leaf and can be returned as is
     if not isinstance(dicts, dict):
         return dicts
 
@@ -250,10 +305,18 @@ def dicts_to_object(
 
     if cls is dict:
         result = {}
+
+        # since the result is mutable we can already store it in the references
+        # such that if a reference cycle comes up the object can simply be
+        # retrieved from the references dictionary
         refs[path] = result
 
         for key, value in dicts.items():
+            # the path to the current child is one level deeper than the
+            # path to the current object
             key_path = PathLookup((*path.path, key))
+
+            # apply the conversion recursively
             result[key.key] = dicts_to_object(value, key_path, refs)
 
         return result
@@ -295,15 +358,46 @@ def dicts_to_object(
 
         return new
 
-    raise ValueError(f"Cannot reconstruct `{cls}`")
+    # should be unreachable for objects that were created with `object_to_dicts`
+    error = f"Cannot reconstruct `{cls}`."
+    raise ValueError(error)
 
 
 def dict_to_tuples(d: dict) -> tuple[tuple[Hashable, Any], ...]:
+    """
+    Convert a dictionary to a tuple of key-value pairs, sorted by the hash of
+    the keys.
+    This is useful to create a hashable representation of a dictionary, i.e.
+    for the auxiliary data in jax PyTree.
+
+    Parameters
+    ---
+    d: dict
+        Dictionary to convert.
+
+    Returns
+    ---
+    tuple[tuple[Hashable, Any], ...]
+        A n-tuple of key-value 2-tuples.
+    """
     keys = sorted(d.keys(), key=hash)
     return tuple((k, d[k]) for k in keys)
 
 
 def tuples_to_dict(t: tuple) -> dict[Hashable, Any]:
+    """
+    Inverse of the `dict_to_tuples` function.
+
+    Parameters
+    ---
+    t: tuple
+        N-tuple of key-value 2-tuples.
+
+    Returns
+    ---
+    dict[Hashable, Any]
+        Dictionary representation of the n-tuple.
+    """
     return {k: v for k, v in t}
 
 
@@ -311,6 +405,21 @@ def flatten_dict(
     nested_dict: dict,
     path=(),
 ) -> dict:
+    """
+    Flatten a nested dictionary into a dictionary of n-tuple paths and values.
+
+    Parameters
+    ---
+    nested_dict: dict
+        Nested dictionary to flatten.
+
+    Returns
+    ---
+    dict
+        Flattened dictionary. Each key is a n-tuple path of the keys to the leaf
+        value of the original dictionary.
+    """
+
     items = {}
 
     for key, value in nested_dict.items():
@@ -325,7 +434,23 @@ def flatten_dict(
     return dict(items)
 
 
-def unflatten_dict(flat_dict: dict) -> dict:
+def unflatten_dict(flat_dict: dict[tuple[Hashable, ...], Any]) -> dict:
+    """
+    Inverse of the `flatten_dict` function.
+
+    Parameters
+    ---
+    flat_dict: dict
+        Flattened dictionary to unflatten. The keys muse be n-tuples of
+        dictionary keys.
+
+    Returns
+    ---
+    dict
+        A nested dictionary where each key is a part of the n-tuple path to the
+        leaf value of the original dictionary.
+    """
+
     nested_dict = {}
 
     for path, value in flat_dict.items():
@@ -385,14 +510,28 @@ def unflatten(obj_path: dict[PathLookup, Any]) -> Any:
     Any
         Reconstructed object.
     """
+    obj_flat: dict[tuple[Hashable, ...], Any]
     obj_flat = {k.path: v for k, v in obj_path.items()}
-    obj_deep = unflatten_dict(obj_flat)
 
+    obj_deep = unflatten_dict(obj_flat)
     obj_reco = dicts_to_object(obj_deep)
     return obj_reco
 
 
 def array_summary(x: jax.Array, /) -> str:
+    """
+    Summarize an array by its dtype and shape.
+
+    Parameters
+    ---
+    x: jax.Array
+        Array to summarize.
+
+    Returns
+    ---
+    str
+        Summary of its dtype and shape.
+    """
     dtype = x.dtype.str[1:]
     shape = list(x.shape)
 
@@ -401,6 +540,9 @@ def array_summary(x: jax.Array, /) -> str:
 
 
 def _build_summary(head, body, tail):
+    """
+    Helper function for building a summary of a nested object.
+    """
     body = ",\n".join(body)
     body = body.replace("\n", "\n  ")
 
@@ -426,12 +568,14 @@ def summary(obj: Any, /) -> str:
         Human-readable string representation of the object.
     """
     if not isinstance(obj, (Module, tuple, list, dict, jax.Array)):
-        return str(obj)
+        return repr(obj)
 
+    # compress arrays to their shape and dtype
     if isinstance(obj, jax.Array):
         return array_summary(obj)
 
     if isinstance(obj, list):
+        # apply recursively to all elements
         body = [summary(value) for value in obj]
         return _build_summary("[", body, "]")
 

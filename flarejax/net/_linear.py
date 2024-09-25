@@ -1,3 +1,7 @@
+"""
+Linear transformations layers and similar modules.
+"""
+
 import jax.numpy as jnp
 import jax.random as jrn
 from jaxtyping import Array, Float, PRNGKeyArray, jaxtyped
@@ -87,6 +91,9 @@ class Bias(Module):
         self.bias = None
 
     def _build(self, x) -> None:
+        if self.bias is not None:
+            return
+
         dim_in = x.shape[-1]
         glorot = dim_in**-0.5
 
@@ -103,10 +110,9 @@ class Bias(Module):
         self,
         x: Float[Array, "*batch dim"],
     ) -> Float[Array, "*batch dim"]:
-        if self.bias is None:
-            self._build(x)
-
+        self._build(x)
         assert self.bias is not None
+
         return x + self.bias
 
     @property
@@ -167,6 +173,9 @@ class Scale(Module):
         self.scale = None
 
     def _build(self, x) -> None:
+        if self.scale is not None:
+            return
+
         self.scale = jnp.zeros((x.shape[-1],), x.dtype)
 
     @jaxtyped(typechecker=typecheck)
@@ -174,9 +183,7 @@ class Scale(Module):
         self,
         x: Float[Array, "*batch dim"],
     ) -> Float[Array, "*batch dim"]:
-        if self.scale is None:
-            self._build(x)
-
+        self._build(x)
         assert self.scale is not None
 
         if self.offset:

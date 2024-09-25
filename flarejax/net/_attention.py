@@ -1,3 +1,7 @@
+"""
+Attention mechanisms for neural networks.
+"""
+
 from typing import Any, Callable
 
 import jax.nn as jnn

@@ -1,3 +1,7 @@
+"""
+Tools for implementing new gradient based optimizers.
+"""
+
 import abc
 import copy
 from typing import Any, Callable, Self, TypeVar
