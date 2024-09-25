@@ -85,6 +85,10 @@ def _loss_gradient(
 
 @saveable("flarejax.opt.Optimizer")
 class Optimizer(Module):
+    """
+    Base class for implementing new gradient based optimizers.
+    """
+
     @filter_jit
     def minimize(
         self,
