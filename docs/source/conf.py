@@ -30,7 +30,7 @@ html_theme = "sphinx_book_theme"
 html_static_path = ["_static"]
 
 html_logo = "_static/logo.png"
-html_title = ""
+html_title = "FlareDocs"
 
 html_favicon = "_static/favicon.ico"
 
