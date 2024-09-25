@@ -3,8 +3,8 @@ from typing import Any, Callable, Generic, Hashable, ParamSpec, TypeVar
 
 import jax
 
-from .._filter import filter_jit
-from .._module import Module
+from ._filter import filter_jit
+from ._module import Module
 
 __all__ = [
     "Jit",

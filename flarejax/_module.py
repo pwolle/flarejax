@@ -1,7 +1,6 @@
 import abc
 import copy
 import dataclasses
-from types import MethodType
 from typing import Any, Hashable, Self
 
 import jax
@@ -453,7 +452,7 @@ def summary(obj: Any, /) -> str:
     if hasattr(obj, "__dict__"):
         keys.extend(obj.__dict__.keys())
 
-    keys = filter(lambda key: not key.startswith("__"), keys)
+    keys = filter(lambda key: not key.startswith("_"), keys)
 
     body = [f"{key}={summary(getattr(obj, key))}" for key in keys]
     return _build_summary(f"{type(obj).__name__}(", body, ")")

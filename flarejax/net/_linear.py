@@ -68,12 +68,6 @@ class Linear(Module):
 
         return self.weight.shape[0]
 
-    def __repr__(self) -> str:
-        head = f"{type(self).__name__}("
-        body = f"dim_in={self.dim_in}, dim={self.dim})"
-        tail = ")"
-        return head + body + tail
-
 
 @saveable("flarejax.Bias")
 class Bias(Module):
@@ -122,12 +116,6 @@ class Bias(Module):
 
         return self.bias.shape[0]
 
-    def __repr__(self) -> str:
-        head = f"{type(self).__name__}("
-        body = f"dim={self.dim})"
-        tail = ")"
-        return head + body + tail
-
 
 @saveable("flarejax.Affine")
 class Affine(Module):
@@ -158,12 +146,6 @@ class Affine(Module):
     @property
     def dim_in(self) -> int | None:
         return self.linear.dim_in
-
-    def __repr__(self) -> str:
-        head = f"{type(self).__name__}("
-        body = f"dim_in={self.dim_in}, dim={self.bias.dim})"
-        tail = ")"
-        return head + body + tail
 
 
 @saveable("flarejax.Scale")
