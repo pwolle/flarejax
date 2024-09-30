@@ -152,7 +152,7 @@ dmypy.json
 # Cython debug symbols
 cython_debug/
 
-test.py
+test*.py
 *.npz
 
 docs/build

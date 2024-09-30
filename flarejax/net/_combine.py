@@ -24,12 +24,12 @@ __all__ = [
 class Sequential(Module):
     """
     Call a sequence of modules in order.
-    The first argument is updated, while the *args and **kwargs are passed to
+    The first argument is updated, while the args and kwargs are passed to
     each module.
 
     Parameters
     ---
-    *modules: Callable[..., jax.Array]
+    modules: Callable[..., jax.Array]
         Modules to call in order.
 
     """
@@ -50,12 +50,12 @@ class Sequential(Module):
 class Add(Sequential):
     """
     Add the output of a sequence of modules to the input.
-    The first argument is updated, while the *args and **kwargs are passed to
+    The first argument is updated, while the args and kwargs are passed to
     each module.
 
     Parameters
     ---
-    *modules: Callable[..., jax.Array]
+    modules: Callable[..., jax.Array]
         Modules to call in order.
 
     """
@@ -71,12 +71,12 @@ class Add(Sequential):
 class Multiply(Sequential):
     """
     Multiply the output of a sequence of modules by the input.
-    The first argument is updated, while the *args and **kwargs are passed to
+    The first argument is updated, while the args and kwargs are passed to
     each module.
 
     Parameters
     ---
-    *modules: Callable[..., jax.Array]
+    modules: Callable[..., jax.Array]
         Modules to call in order.
 
     """
@@ -112,6 +112,25 @@ class Constant(Module):
         shape: tuple[int, ...],
         std: float = 1.0,
     ) -> Self:
+        """
+        Initialize with random normal values.
+
+        Parameters
+        ---
+        key: PRNGKeyArray
+            The key to use for random number generation.
+
+        shape: tuple[int, ...]
+            The shape of the array.
+
+        std: float
+            The standard deviation of the normal distribution.
+
+        Returns
+        ---
+        Constant
+            The initialized module.
+        """
         return cls(jrn.normal(key, shape) * std)
 
     @classmethod
@@ -122,28 +141,75 @@ class Constant(Module):
         low: float = -1.0,
         high: float = 1.0,
     ) -> Self:
+        """
+        Initialize with random uniform values.
+
+        Parameters
+        ---
+        key: PRNGKeyArray
+            The key to use for random number generation.
+
+        shape: tuple[int, ...]
+            The shape of the array.
+
+        low: float
+            The lower bound of the uniform distribution.
+
+        high: float
+            The upper bound of the uniform distribution.
+
+        Returns
+        ---
+        Constant
+            The initialized module.
+        """
         return cls(jrn.uniform(key, shape, minval=low, maxval=high))
 
     @classmethod
     def full(cls, x: float = 0.0, shape: tuple[int, ...] = ()) -> Self:
+        """
+        Initialize with a constant value.
+
+        Parameters
+        ---
+        x: float
+            The constant value.
+
+        shape: tuple[int, ...]
+            The shape of the array.
+
+        Returns
+        ---
+        Constant
+            The initialized module.
+        """
         return cls(jnp.full(shape, x))
 
     @property
     def shape(self) -> tuple[int, ...]:
+        """
+        Return the shape of the constant value.
+        """
         return self.value.shape
 
     @property
     def dtype(self) -> jnp.dtype:
+        """
+        Return the dtype of the constant value.
+        """
         return self.value.dtype
 
-    def __call__(self, *_) -> jax.Array:
+    def __call__(self, *args, **kwargs) -> jax.Array:
+        """
+        Return the constant value, ignoring all inputs.
+        """
         return self.value
 
 
 @saveable("flarejax.Identity")
 class Identity(Module):
     """
-    Return the input. Ignores *args and **kwargs.
+    Return the input. Ignores args and kwargs.
     Useful combining modules, e.g. creating a simple residual
     connection by combining a module with an Identity module using Add.
 

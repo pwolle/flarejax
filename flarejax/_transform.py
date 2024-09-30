@@ -83,6 +83,22 @@ class Vmap(Module, Generic[P, T]):
 
 
 class Partial(Module, Generic[T]):
+    """
+    Fix parts of the arguments of a callable module. Can be used in a similar
+    manner to `functools.partial`.
+
+    Parameters
+    ---
+    module: Callable[..., T]
+        The module to partially apply.
+
+    args: Any
+        Arguments to fix.
+
+    kwargs: Any
+        Keyword arguments to fix.
+    """
+
     def __init__(
         self,
         module: Callable[..., T],

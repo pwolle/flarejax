@@ -2,228 +2,218 @@
 Attention mechanisms for neural networks.
 """
 
-from typing import Any, Callable
+from typing import Literal
 
 import jax.nn as jnn
 import jax.numpy as jnp
-import jax.random as jrn
-from jaxtyping import Array, Float, PRNGKeyArray, jaxtyped
+from jaxtyping import Array, Float, PRNGKeyArray
 
 from ._linear import Linear
 from .._module import Module
 from .._serial import saveable
 from .._tcheck import typecheck
 
+
 __all__ = [
+    "CrossAttention",
     "DotProductAttention",
-    "MultiHeadAttention",
 ]
 
 
 @saveable("flarejax.net.DotProductAttention")
 class DotProductAttention(Module):
     """
-    Module for computing 'Dot Product Attention' between query, key and value
-    tensors.
-
-    Parameters
-    ---
-    scale: bool = True
-        Whether to use scaling by the square root of the dimension.
-        Used in the original 'Attention is All You Need' paper [1].
-
-    score: Callable[[Float[Array, "*s"]], Float[Array, "*s"]] | None = None
-        Function to apply to the attention scores before softmax.
-
-    dtype: Any = jnp.float32
-        Data type to use for the attention scores. Even when using bfloat16
-        training, it is recommended to use float32 for the attention scores.
-
-    References
-    - [1] https://arxiv.org/abs/1706.03762
-    - [2] https://arxiv.org/abs/2102.01625
-    """
-
-    @typecheck
-    def __init__(
-        self,
-        scale: bool = True,
-        score: Callable[[Float[Array, "*s"]], Float[Array, "*s"]] | None = None,
-        dtype: Any = jnp.float32,
-    ):
-        self.scale = scale
-        self.score = score
-        self.dtype = dtype
-
-    @jaxtyped(typechecker=typecheck)
-    def __call__(
-        self,
-        q: Float[Array, "*batch seq dim_head"],
-        k: Float[Array, "*batch aux dim_head"],
-        v: Float[Array, "*batch aux dim_v"],
-    ) -> tuple[
-        Float[Array, "*batch seq dim_v"],
-        Float[Array, "*batch aux seq"],
-    ]:
-        if self.scale:
-            s = q.shape[-1] ** -0.5
-            q = q * s
-
-        att = jnp.einsum("...hsd,...had->...hsa", q, k)
-
-        if self.score is not None:
-            att = self.score(att)
-
-        att = jnn.softmax(att.astype(self.dtype), axis=-1).astype(att.dtype)
-        ret = jnp.einsum("...hsa,...had->...hsd", att, v)
-
-        return ret, att
-
-
-_default_att_func = DotProductAttention()
-
-
-@saveable("flarejax.net.MultiHeadAttention")
-class MultiHeadAttention(Module):
-    """
-    Module for computing 'Multi-Head Attention' between query-, key- and value
-    tensors [1].
+    Apply dot-product attention to a sequence.
 
     Parameters
     ---
     key: PRNGKeyArray
-        Random key for initializing the internal Linear modules.
+        The key to use for random number generation.
 
     dim: int
-        Dimension of the input and output tensors.
+        The dimension of the final output.
 
-    dim_head: int
-        Dimension of each head.
+    heads_q: int
+        The number of heads for the query.
 
-    att_func: Callable[[Float[Array, "*batch heads seq dim_head"],
-                        Float[Array, "*batch heads aux dim_head"],
-                        Float[Array, "*batch heads aux dim_v"]],
-                        tuple[Float[Array, "*batch heads seq dim_v"], Any]]
-        Attention function to use. Default is DotProductAttention.
-        This function computes the attention between the query, key and value
-        tensors and returns the output tensor and any other value like the
-        attention weights that might be useful for debugging.
+    heads_k: int | None
+        The number of heads for the key. If None, defaults to `heads_q`.
 
-    References
-    - [1] https://arxiv.org/abs/1706.03762
+    kwargs: Any
+        For the full list of keyword arguments, see
+        `jax.nn.dot_product_attention`.
     """
 
-    @typecheck
     def __init__(
         self,
         key: PRNGKeyArray,
         dim: int,
-        dim_head: int,
-        att_func: Callable[
-            [
-                Float[Array, "*batch heads seq dim_head"],
-                Float[Array, "*batch heads aux dim_head"],
-                Float[Array, "*batch heads aux dim_v"],
-            ],
-            tuple[Float[Array, "*batch heads seq dim_v"], Any],
-        ] = _default_att_func,
-    ) -> None:
-        assert dim % dim_head == 0
+        heads_q: int,
+        heads_k: int | None = None,
+        bias: Array | None = None,
+        mask: Array | None = None,
+        *,
+        scale: float | None = None,
+        is_causal: bool = False,
+        key_value_seq_lengths: Array | None = None,
+        implementation: Literal["xla", "cudnn"] | None = None,
+    ):
+        heads_k = heads_k or heads_q
+
+        assert dim % heads_q == 0
+        assert dim % heads_k == 0
+        assert heads_k % heads_q == 0
 
         self.dim = dim
-        self.dim_head = dim_head
-        self.att_func = att_func
+        self.dim_head = dim // heads_q
 
-        key_qkv, key_out = jrn.split(key)
+        self.heads_q = heads_q
+        self.heads_k = heads_k
 
-        self.qkv = Linear(key_qkv, dim * 3)
-        self.out = Linear(key_out, dim)
+        self.bias = bias
+        self.mask = mask
+        self.scale = scale
+        self.is_causal = is_causal
+        self.key_value_seq_lengths = key_value_seq_lengths
+        self.implementation = implementation
 
-    @jaxtyped(typechecker=typecheck)
+        self.qkv = Linear(
+            key,
+            self.dim_head * heads_q + self.dim_head * heads_k * 2,
+        )
+
     def __call__(
         self,
-        x: Float[Array, "*batch seq dim_in"],
-    ) -> Float[Array, "*batch seq {self.dim}"]:
+        x: Float[Array, "*batch seq dim"],
+    ) -> Float[Array, "*batch seq dim"]:
         qkv = self.qkv(x)
+        qkv = qkv.reshape((*qkv.shape[:-1], -1, self.dim_head))
 
-        qkv = qkv.reshape((*qkv.shape[:-1], -1, self.dim_head * 3))
-        q, k, v = jnp.split(qkv, 3, axis=-1)
+        q = qkv[..., : self.heads_q, :]
+        k = qkv[..., self.heads_q : self.heads_q + self.heads_k, :]
+        v = qkv[..., self.heads_q + self.heads_k :, :]
 
-        ret, _ = self.att_func(q, k, v)
-        ret = ret.reshape((*ret.shape[:-2], -1))
+        y = jnn.dot_product_attention(
+            q,
+            k,
+            v,
+            bias=self.bias,
+            mask=self.mask,
+            scale=self.scale,
+            is_causal=self.is_causal,
+            key_value_seq_lengths=self.key_value_seq_lengths,
+            implementation=self.implementation,  # type: ignore
+        )
+        return y.reshape((*y.shape[:-2], -1))
 
-        return self.out(ret)
+    @property
+    def dim_in(self) -> int | None:
+        """
+        Return the input dimension of the module. If the module does not have
+        a fixed input dimension yet, return None.
+        """
+        return self.qkv.dim_in
 
 
-@saveable("flarejax.net.CrossAttention")
+@saveable("flarejax.net.Crossattention")
 class CrossAttention(Module):
     """
-    Perform cross-attention between two sequences of vectors.
+    Perform cross-attention between two sequences.
 
     Parameters
     ---
     key: PRNGKeyArray
-        Random key for initializing the internal Linear modules.
+        The key to use for random number generation.
 
     dim: int
-        Dimension of the input and output tensors.
+        The dimension of the final output.
 
-    dim_head: int
-        Dimension of each head.
+    heads_q: int
+        The number of heads for the query.
 
-    att_func: Callable[[Float[Array, "*batch heads seq dim_head"],
-                        Float[Array, "*batch heads aux dim_head"],
-                        Float[Array, "*batch heads aux dim_v"],
-                        Any],
-                        tuple[Float[Array, "*batch heads seq dim_v"], Any]]
-        Attention function to use. Default is DotProductAttention.
-        This function computes the attention between the query, key and value
-        tensors and returns the output tensor and any other value like the
-        attention weights that might be useful for debugging.
+    heads_k: int | None
+        The number of heads for the key. If None, defaults to `heads_q`.
+
+    kwargs: Any
+        For the full list of keyword arguments, see
+        `jax.nn.dot_product_attention`.
     """
 
-    @typecheck
     def __init__(
         self,
         key: PRNGKeyArray,
         dim: int,
-        dim_head: int,
-        att_func: Callable[
-            [
-                Float[Array, "*batch heads seq dim_head"],
-                Float[Array, "*batch heads aux dim_head"],
-                Float[Array, "*batch heads aux dim_v"],
-            ],
-            tuple[Float[Array, "*batch heads seq dim_v"], Any],
-        ] = _default_att_func,
-    ) -> None:
-        assert dim % dim_head == 0
+        heads_q: int,
+        heads_k: int | None = None,
+        bias: Array | None = None,
+        mask: Array | None = None,
+        *,
+        scale: float | None = None,
+        is_causal: bool = False,
+        key_value_seq_lengths: Array | None = None,
+        implementation: Literal["xla", "cudnn"] | None = None,
+    ):
+        heads_k = heads_k or heads_q
+
+        assert dim % heads_q == 0
+        assert dim % heads_k == 0
+        assert heads_k % heads_q == 0
 
         self.dim = dim
-        self.dim_head = dim_head
-        self.att_func = att_func
+        self.dim_head = dim // heads_q
 
-        key_q, key_kv, key_out = jrn.split(key, 3)
+        self.heads_q = heads_q
+        self.heads_k = heads_k
 
-        self.q = Linear(key_q, dim)
-        self.kv = Linear(key_kv, dim * 2)
+        self.bias = bias
+        self.mask = mask
+        self.scale = scale
+        self.is_causal = is_causal
+        self.key_value_seq_lengths = key_value_seq_lengths
+        self.implementation = implementation
 
-        self.out = Linear(key_out, dim)
+        self.q = Linear(key, self.dim_head * heads_q)
+        self.kv = Linear(key, self.dim_head * heads_k * 2)
 
-    @jaxtyped(typechecker=typecheck)
     def __call__(
         self,
-        x: Float[Array, "*batch seq dim_in"],
-        y: Float[Array, "*batch aux dim_in"],
-    ) -> Float[Array, "*batch seq {self.dim}"]:
+        x: Float[Array, "*batch seq dim"],
+        y: Float[Array, "*batch aux dim"],
+    ) -> Float[Array, "*batch seq dim"]:
         q = self.q(x)
-        q = q.reshape((*q.shape[:-1], -1, self.dim_head))
+        q = jnp.reshape(q, (*q.shape[:-1], self.heads_q, self.dim_head))
 
         kv = self.kv(y)
-        kv = kv.reshape((*kv.shape[:-1], -1, self.dim_head * 2))
-        k, v = jnp.split(kv, 2, axis=-1)
+        kv = jnp.reshape(kv, (*kv.shape[:-1], self.heads_k * 2, self.dim_head))
 
-        ret, _ = self.att_func(q, k, v)
-        ret = ret.reshape((*ret.shape[:-2], -1))
+        k = kv[..., : self.heads_k, :]
+        v = kv[..., self.heads_k :, :]
 
-        return self.out(ret)
+        y = jnn.dot_product_attention(
+            q,
+            k,
+            v,
+            bias=self.bias,
+            mask=self.mask,
+            scale=self.scale,
+            is_causal=self.is_causal,
+            key_value_seq_lengths=self.key_value_seq_lengths,
+            implementation=self.implementation,  # type: ignore
+        )
+        return y.reshape((*y.shape[:-2], -1))
+
+    @property
+    def dim_in_x(self) -> int | None:
+        """
+        Return the input dimension of the first sequence. If the module does not
+        have a fixed input dimension yet, return None.
+        """
+        return self.q.dim_in
+
+    @property
+    def dim_in_y(self) -> int | None:
+        """
+        Return the input dimension of the second sequence. If the module does not
+        have a fixed input dimension yet, return None.
+        """
+        return self.kv.dim_in

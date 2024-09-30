@@ -49,7 +49,7 @@ def saveable(name, warn: bool = True):
         key = f"__TYPE__:{name}"
 
         if key in _SAVEABLE_TYPES and warn:
-            print("Warning: Overwriting existing saveable type")
+            print(f"Warning: Overwriting existing saveable type {name}")
 
         _SAVEABLE_TYPES[key] = obj
         _SAVEABLE_TYPES_INV[obj] = key
@@ -144,6 +144,24 @@ def save(module, save_path: str):
 
 
 def load(load_path: str):
+    """
+    Load a object from a file that was saved using the `save` function.
+
+    Module which were marked as serializable using the `saveable` decorator
+    must be imported before calling this function, otherwise this function
+    will not know how to deserialize them.
+
+    Parameters
+    ---
+    load_path: str
+        The path to the file to load.
+
+    Returns
+    ---
+    Any
+        The deserialized object.
+
+    """
     file = dict(jnp.load(load_path))
 
     data = json.loads(str(file.pop("data")))

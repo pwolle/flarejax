@@ -29,10 +29,7 @@ exclude_patterns = []
 html_theme = "sphinx_book_theme"
 html_static_path = ["_static"]
 
-html_logo = "_static/logo.png"
 html_title = "FlareDocs"
-
-html_favicon = "_static/favicon.ico"
 
 html_theme_options = {
     "repository_url": "https://github.com/pwolle/flarejax",
@@ -41,13 +38,20 @@ html_theme_options = {
     "use_download_button": False,
     "use_fullscreen_button": False,
     "logo": {
-        "text": "<span style='font-size: 1.5em;'>FlareJax</span>",
+        "text": "<span style='font-size: 2em;'>FlareJax</span>",
     },
+}
+
+html_context = {
+    "default_mode": "dark",
 }
 
 html_css_files = [
     "custom.css",
 ]
+
+autodoc_default_options = {"undoc-members": False}
+
 
 import os
 import sys

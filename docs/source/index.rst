@@ -1,5 +1,5 @@
 Welcome to FlareJax's documentation!
-=============
+=====================================
 
 .. title:: FlareJax Docs
 .. toctree::

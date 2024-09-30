@@ -13,7 +13,7 @@ __all__ = [
 @saveable("falrejax.opt.Adam")
 class Adam(Optimizer):
     """
-    Impelementation of the Adam optimizer [1].
+    Implementation of the `Adam optimizer <https://arxiv.org/abs/1412.6980>`_.
     The Adam optimizer works by keeping a running exponential moving average of
     the first and second moments of the gradient, and using these to update the
     parameters.
@@ -35,10 +35,6 @@ class Adam(Optimizer):
 
     eps_root: float
         Small value to prevent division by zero in the square root.
-
-    References
-    ---
-    [1] https://arxiv.org/abs/1412.6980
     """
 
     def __init__(
@@ -55,7 +51,7 @@ class Adam(Optimizer):
         self.eps = eps
         self.eps_root = eps_root
 
-        self.t = jnp.zeros((), jnp.uint64)
+        self.t = jnp.zeros((), jnp.uint32)
         self.m = {}
         self.v = {}
 

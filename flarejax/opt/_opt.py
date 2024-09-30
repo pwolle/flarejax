@@ -11,7 +11,8 @@ import jax.numpy as jnp
 from jaxtyping import Array, Float
 
 from .._filter import filter_jit
-from .._module import Module, PathLookup, flatten, unflatten
+from .._module import Module, flatten, unflatten
+from .._lookup import PathLookup, AttrLookup
 from .._tcheck import typecheck
 from .._serial import saveable
 
@@ -48,30 +49,64 @@ def _filter_and_reconstruct(
     return active, reconstruct
 
 
+def _filter_frozen(module) -> Callable[[PathLookup, Array], bool]:
+    """
+    Create a function that returns True if the parameter should be included
+    in the optimization step, by checking if any of the preceding modules in
+    the depth first search have the frozen attribute set to True.
+    """
+
+    flat = flatten(module)
+    frozen = set()
+
+    # for performance, return a function that always returns True if there
+    # are no frozen modules, this avoids iterating over all prefixes
+    if not frozen:
+        return lambda *_: True
+
+    for key, value in flat.items():
+        if key.path[-1] == AttrLookup("_frozen") and value is True:
+            frozen.add(key.path[:-1])
+
+    def include(key, value):
+        path = key.path
+
+        for i in range(len(path)):
+            if path[:i] in frozen:
+                return False
+
+        return True
+
+    return include
+
+
 @typecheck
 def _loss_gradient(
     loss: Callable[..., Float[Array, ""]],
     model: T,
     *args: Any,
-    include: Callable[[PathLookup, Array], bool] = lambda *_: True,
 ) -> tuple[
     T,
     dict[PathLookup, Float[Array, "..."]],
     Float[Array, ""],
 ]:
-    def include_(key, value):
+    include_non_frozen = _filter_frozen(model)
+
+    def include(key, value):
         if not isinstance(value, jax.Array):
             return False
 
         if not jnp.issubdtype(value.dtype, jnp.floating):
             return False
 
-        result = include(key, value)
-        return result
+        if not include_non_frozen(key, value):
+            return False
+
+        return True
 
     params, reconstruct = _filter_and_reconstruct(
         model,
-        lambda k, v: include(k, v) and include_(k, v),
+        lambda k, v: include(k, v) and include(k, v),
     )
 
     def loss_filtered(params):
@@ -87,6 +122,17 @@ def _loss_gradient(
 class Optimizer(Module):
     """
     Base class for implementing new gradient based optimizers.
+
+    New optimizers should inherit from this class and implement the __call__
+    method for transforming the gradients.
+    The __call__ method expects a
+    key of type PathLookup and a gradient array and should return an array of
+    the same type.
+
+    If any module or submodule that is being optimized has a frozen attribute
+    set to True, the optimizer will not update the parameters of that module
+    and all of its submodules (modules that occur later in a depth first
+    search).
     """
 
     @filter_jit
@@ -97,16 +143,37 @@ class Optimizer(Module):
         *args: Any,
         **kwargs: Any,
     ) -> tuple[Self, T, Float[Array, ""]]:
-        return self.minimize_no_jit(loss, model, *args, **kwargs)
+        """
+        Apply the optimizer to the module for minimizing the loss function.
 
-    @property
-    def _include(self):
-        if not hasattr(self, "include"):
-            return lambda *_: True
+        Parameters
+        ---
+        loss: Callable[..., Float[Array, ""]]
+            The loss function to minimize.
+            The first argument should be the model.
 
-        return self.include  # type: ignore
+        model: Module
+            The model to optimize.
 
-    def minimize_no_jit(
+        args and kwargs: Any
+            Additional arguments to pass to the loss function.
+
+
+        Returns
+        ---
+        Self
+            The optimizer.
+
+        Module
+            The updated model.
+
+        Float[Array, ""]
+            The value of the loss function.
+        """
+
+        return self._minimize_no_jit(loss, model, *args, **kwargs)
+
+    def _minimize_no_jit(
         self,
         loss: Callable[..., Float[Array, ""]],
         model: T,
@@ -118,7 +185,6 @@ class Optimizer(Module):
             model,
             *args,
             **kwargs,
-            include=self._include,
         )
 
         grads = self._call_map(grads)
@@ -152,6 +218,10 @@ class Optimizer(Module):
 
 
 class Chain(Optimizer):
+    """
+    Combine multiple gradient transformations into a signle optimizer.
+    """
+
     @typecheck
     def __init__(
         self,

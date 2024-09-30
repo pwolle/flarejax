@@ -10,3 +10,7 @@ typecheck = beartype.beartype(
         violation_type=UserWarning,
     )
 )
+
+typecheck.__doc__ = """
+Type check a function call based on its type hints, but only print warnings.
+"""

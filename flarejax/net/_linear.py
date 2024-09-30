@@ -67,6 +67,10 @@ class Linear(Module):
 
     @property
     def dim_in(self) -> int | None:
+        """
+        Return the input dimension of the module. If the module does not have
+        a fixed input dimension yet, return None.
+        """
         if self.weight is None:
             return None
 
@@ -117,6 +121,10 @@ class Bias(Module):
 
     @property
     def dim(self) -> int | None:
+        """
+        Return the dimension of the bias. If the bias has not been initialized
+        yet, return None.
+        """
         if self.bias is None:
             return None
 
@@ -190,3 +198,14 @@ class Scale(Module):
             return x * (1 + self.scale)
 
         return x * self.scale
+
+    @property
+    def dim(self) -> int | None:
+        """
+        Return the dimension of the scale. If the scale has not been initialized
+        yet, return None.
+        """
+        if self.scale is None:
+            return None
+
+        return self.scale.shape[0]

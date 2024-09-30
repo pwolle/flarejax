@@ -6,15 +6,13 @@ from typing import Any, Hashable, Self
 import jax
 import jax.tree_util as jtu
 
+from ._lookup import AttrLookup, ItemLookup, PathLookup
 from ._tcheck import typecheck
 
 __all__ = [
     "Module",
     "flatten",
     "unflatten",
-    "PathLookup",
-    "ItemLookup",
-    "AttrLookup",
 ]
 
 
@@ -98,10 +96,18 @@ class Module(PyTreeBase):
     """
 
     def tree_flatten(self: Self):
+        """
+        Convert the module into a tuple of its array valued leaves and
+        auxiliary data.
+
+        The auxillary data is a 2-tuple of the all other leaves with their keys
+        and the keys of the array valued leaves.
+        They keys are the paths to the leaves in the original module.
+        """
         flat = flatten(self)
 
         active = []
-        acitve_keys = []
+        active_keys = []
 
         static = []
 
@@ -110,15 +116,18 @@ class Module(PyTreeBase):
 
             if isinstance(value, jax.Array):
                 active.append(value)
-                acitve_keys.append(key)
+                active_keys.append(key)
                 continue
 
             static.append((key, value))
 
-        return tuple(active), (tuple(static), tuple(acitve_keys))
+        return tuple(active), (tuple(static), tuple(active_keys))
 
     @classmethod
     def tree_unflatten(cls, aux_data, active):
+        """
+        Reconstruct the module from its flattened representation.
+        """
         static, active_keys = aux_data
         static = dict(static)
         active = dict(zip(active_keys, active))
@@ -127,51 +136,16 @@ class Module(PyTreeBase):
     def __repr__(self) -> str:
         return summary(self)
 
+    @property
+    def frozen(self):
+        if not hasattr(self, "_frozen"):
+            self._frozen = False
 
-@dataclasses.dataclass(repr=False)
-class Method(Module):
-    module: Module
-    method: str
+        return self._frozen
 
-    def __call__(self, *args, **kwargs):
-        method = getattr(self.module.__class__, self.method)
-        return method(self.module, *args, **kwargs)
-
-
-@dataclasses.dataclass(frozen=True)
-class ItemLookup:
-    """
-    Describes how to lookup an item in a dictionary or list or tuple.
-    """
-
-    key: Hashable | int
-
-    def __repr__(self) -> str:
-        return f"[{self.key}]"
-
-
-@dataclasses.dataclass(frozen=True)
-class AttrLookup:
-    """
-    Describes how to lookup an attribute in a class.
-    """
-
-    key: str
-
-    def __repr__(self) -> str:
-        return f".{self.key}"
-
-
-@dataclasses.dataclass(frozen=True)
-class PathLookup:
-    """
-    Describes how to lookup a value in a nested structure.
-    """
-
-    path: tuple[ItemLookup | AttrLookup, ...]
-
-    def __repr__(self) -> str:
-        return "obj" + "".join(map(str, self.path))
+    @frozen.setter
+    def frozen(self, value):
+        self._frozen = value
 
 
 # To be able to reconstruct any object from the flatttened dictionary
@@ -237,7 +211,8 @@ def object_to_dicts(
         for key in sorted(obj.keys(), key=hash):
             # the path to the current child is one level deeper than the
             # path to the current object
-            key_path = PathLookup((*path.path, ItemLookup(key)))
+            # key_path = Lookup((*path.path, ItemLookup(key)))
+            key_path = path + ItemLookup(key)
 
             # recursively convert the value to a dictionary
             obj_dict[ItemLookup(key)] = object_to_dicts(
@@ -250,7 +225,8 @@ def object_to_dicts(
 
     if isinstance(obj, (list, tuple)):
         for i, value in enumerate(obj):
-            key_path = PathLookup((*path.path, ItemLookup(i)))
+            # key_path = Lookup((*path.path, ItemLookup(i)))
+            key_path = path + ItemLookup(i)
             obj_dict[ItemLookup(i)] = object_to_dicts(value, key_path, refs)
 
         return obj_dict
@@ -265,7 +241,8 @@ def object_to_dicts(
             keys.extend(sorted(obj.__slots__))  # type: ignore
 
         for key in keys:
-            key_path = PathLookup((*path.path, AttrLookup(key)))
+            # key_path = Lookup((*path.path, AttrLookup(key)))
+            key_path = path + AttrLookup(key)
 
             val = getattr(obj, key)
             obj_dict[AttrLookup(key)] = object_to_dicts(val, key_path, refs)
@@ -314,7 +291,8 @@ def dicts_to_object(
         for key, value in dicts.items():
             # the path to the current child is one level deeper than the
             # path to the current object
-            key_path = PathLookup((*path.path, key))
+            # key_path = Lookup((*path.path, key))
+            key_path = path + key
 
             # apply the conversion recursively
             result[key.key] = dicts_to_object(value, key_path, refs)
@@ -327,7 +305,8 @@ def dicts_to_object(
         refs[path] = result
 
         for key in keys:
-            key_path = PathLookup((*path.path, key))
+            # key_path = Lookup((*path.path, key))
+            key_path = path + key
             result.append(dicts_to_object(dicts[key], key_path, refs))
 
         return result
@@ -337,7 +316,8 @@ def dicts_to_object(
         result = []
 
         for key in keys:
-            key_path = PathLookup((*path.path, key))
+            # key_path = Lookup((*path.path, key))
+            key_path = path + key
             result.append(dicts_to_object(dicts[key], key_path, refs))
 
         result = tuple(result)
@@ -352,7 +332,8 @@ def dicts_to_object(
         refs[path] = new
 
         for key, value in dicts.items():
-            key_path = PathLookup((*path.path, key))
+            # key_path = Lookup((*path.path, key))
+            key_path = path + key
             val = dicts_to_object(value, key_path, refs)
             object.__setattr__(new, key.key, val)
 
@@ -603,6 +584,11 @@ def summary(obj: Any, /) -> str:
 
 
 class MethodWrap(Module):
+    """
+    Wrapper for calling a method of a module. This makes it possible to use
+    the benefits of callable PyTrees for all of the methods of a module.
+    """
+
     def __init__(self, module, method):
         self.module = module
         self.method = method
@@ -620,6 +606,10 @@ class MethodWrap(Module):
 
 
 class MethodDescriptor:
+    """
+    Descriptor for making methods of a class callable PyTrees.
+    """
+
     def __init__(self, func):
         self.func = func
 
