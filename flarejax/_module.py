@@ -1,7 +1,6 @@
 import abc
 import copy
-import dataclasses
-from typing import Any, Hashable, Self
+from typing import Any, Hashable, Self, Callable
 
 import jax
 import jax.tree_util as jtu
@@ -137,14 +136,16 @@ class Module(PyTreeBase):
         return summary(self)
 
     @property
-    def frozen(self):
+    @typecheck
+    def frozen(self) -> bool:
         if not hasattr(self, "_frozen"):
             self._frozen = False
 
         return self._frozen
 
     @frozen.setter
-    def frozen(self, value):
+    @typecheck
+    def frozen(self, value: bool):
         self._frozen = value
 
 
@@ -153,6 +154,7 @@ class Module(PyTreeBase):
 TYPE_KEY = AttrLookup("__class__")
 
 
+@typecheck
 def object_to_dicts(
     obj: Any,
     /,
@@ -252,6 +254,7 @@ def object_to_dicts(
     return obj
 
 
+@typecheck
 def dicts_to_object(
     dicts: Any,
     /,
@@ -344,6 +347,7 @@ def dicts_to_object(
     raise ValueError(error)
 
 
+@typecheck
 def dict_to_tuples(d: dict) -> tuple[tuple[Hashable, Any], ...]:
     """
     Convert a dictionary to a tuple of key-value pairs, sorted by the hash of
@@ -365,6 +369,7 @@ def dict_to_tuples(d: dict) -> tuple[tuple[Hashable, Any], ...]:
     return tuple((k, d[k]) for k in keys)
 
 
+@typecheck
 def tuples_to_dict(t: tuple) -> dict[Hashable, Any]:
     """
     Inverse of the `dict_to_tuples` function.
@@ -382,6 +387,7 @@ def tuples_to_dict(t: tuple) -> dict[Hashable, Any]:
     return {k: v for k, v in t}
 
 
+@typecheck
 def flatten_dict(
     nested_dict: dict,
     path=(),
@@ -415,6 +421,7 @@ def flatten_dict(
     return dict(items)
 
 
+@typecheck
 def unflatten_dict(flat_dict: dict[tuple[Hashable, ...], Any]) -> dict:
     """
     Inverse of the `flatten_dict` function.
@@ -448,6 +455,7 @@ def unflatten_dict(flat_dict: dict[tuple[Hashable, ...], Any]) -> dict:
     return nested_dict
 
 
+@typecheck
 def flatten(obj: Any) -> dict[PathLookup, Any]:
     """
     Flatten an object into a dictionary of paths and values.
@@ -477,6 +485,7 @@ def flatten(obj: Any) -> dict[PathLookup, Any]:
     return obj_path
 
 
+@typecheck
 def unflatten(obj_path: dict[PathLookup, Any]) -> Any:
     """
     Reconstruct an object that was flattened with `flatten`.
@@ -499,6 +508,7 @@ def unflatten(obj_path: dict[PathLookup, Any]) -> Any:
     return obj_reco
 
 
+@typecheck
 def array_summary(x: jax.Array, /) -> str:
     """
     Summarize an array by its dtype and shape.
@@ -520,19 +530,21 @@ def array_summary(x: jax.Array, /) -> str:
     return head
 
 
-def _build_summary(head, body, tail):
+@typecheck
+def _build_summary(head: str, body: list[str], tail: str) -> str:
     """
     Helper function for building a summary of a nested object.
     """
-    body = ",\n".join(body)
-    body = body.replace("\n", "\n  ")
+    body_str = ",\n".join(body)
+    body_str = body_str.replace("\n", "\n  ")
 
     if body:
-        body = f"\n  {body},\n"
+        body_str = f"\n  {body},\n"
 
-    return head + body + tail
+    return head + body_str + tail
 
 
+@typecheck
 def summary(obj: Any, /) -> str:
     """
     Convert an object to a human-readable string representation, by formatting
@@ -589,7 +601,8 @@ class MethodWrap(Module):
     the benefits of callable PyTrees for all of the methods of a module.
     """
 
-    def __init__(self, module, method):
+    @typecheck
+    def __init__(self, module: Module, method: Callable):
         self.module = module
         self.method = method
 
@@ -610,7 +623,8 @@ class MethodDescriptor:
     Descriptor for making methods of a class callable PyTrees.
     """
 
-    def __init__(self, func):
+    @typecheck
+    def __init__(self, func: Callable):
         self.func = func
 
     def __get__(self, instance, _):

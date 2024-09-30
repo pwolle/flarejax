@@ -6,7 +6,7 @@ from typing import Literal
 
 import jax.nn as jnn
 import jax.numpy as jnp
-from jaxtyping import Array, Float, PRNGKeyArray
+from jaxtyping import Array, Float, PRNGKeyArray, jaxtyped
 
 from ._linear import Linear
 from .._module import Module
@@ -44,6 +44,7 @@ class DotProductAttention(Module):
         `jax.nn.dot_product_attention`.
     """
 
+    @typecheck
     def __init__(
         self,
         key: PRNGKeyArray,
@@ -82,6 +83,7 @@ class DotProductAttention(Module):
             self.dim_head * heads_q + self.dim_head * heads_k * 2,
         )
 
+    @jaxtyped(typechecker=typecheck)
     def __call__(
         self,
         x: Float[Array, "*batch seq dim"],
@@ -139,6 +141,7 @@ class CrossAttention(Module):
         `jax.nn.dot_product_attention`.
     """
 
+    @typecheck
     def __init__(
         self,
         key: PRNGKeyArray,
@@ -175,11 +178,12 @@ class CrossAttention(Module):
         self.q = Linear(key, self.dim_head * heads_q)
         self.kv = Linear(key, self.dim_head * heads_k * 2)
 
+    @jaxtyped(typechecker=typecheck)
     def __call__(
         self,
-        x: Float[Array, "*batch seq dim"],
-        y: Float[Array, "*batch aux dim"],
-    ) -> Float[Array, "*batch seq dim"]:
+        x: Float[Array, "*batch seq dim_seq"],
+        y: Float[Array, "*batch aux dim_aux"],
+    ) -> Float[Array, "*batch seq dim_seq"]:
         q = self.q(x)
         q = jnp.reshape(q, (*q.shape[:-1], self.heads_q, self.dim_head))
 

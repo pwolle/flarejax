@@ -176,6 +176,7 @@ class Scale(Module):
 
     scale: Float[Array, "dim"] | None
 
+    @typecheck
     def __init__(self, offset: bool = True) -> None:
         self.offset = offset
         self.scale = None

@@ -1,5 +1,6 @@
-from jaxtyping import Array, Float
+from jaxtyping import Array, Float, jaxtyped
 
+from .._tcheck import typecheck
 from ._opt import Optimizer
 
 __all__ = [
@@ -21,11 +22,13 @@ class SGD(Optimizer):
         The learning rate to use for the optimizer.
     """
 
+    @typecheck
     def __init__(
         self,
         learning_rate: float,
     ) -> None:
         self.lr = learning_rate
 
+    @jaxtyped(typechecker=typecheck)
     def __call__(self, _, grad: Float[Array, "*s"]) -> Float[Array, "*s"]:
         return grad * self.lr

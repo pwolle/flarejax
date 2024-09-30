@@ -8,7 +8,7 @@ from typing import Any, Callable, Self, TypeVar
 
 import jax
 import jax.numpy as jnp
-from jaxtyping import Array, Float
+from jaxtyping import Array, Float, jaxtyped
 
 from .._filter import filter_jit
 from .._module import Module, flatten, unflatten
@@ -222,17 +222,16 @@ class Chain(Optimizer):
     Combine multiple gradient transformations into a signle optimizer.
     """
 
-    @typecheck
     def __init__(
         self,
         *optimizers: Callable[
             [PathLookup, Float[Array, "*s"]],
             Float[Array, "*s"],
         ],
-    ):
+    ) -> None:
         self.optimizers = optimizers
 
-    @typecheck
+    @jaxtyped(typechecker=typecheck)
     def __call__(
         self,
         key: PathLookup,

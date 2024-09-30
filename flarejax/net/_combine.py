@@ -11,6 +11,7 @@ from jaxtyping import PRNGKeyArray
 
 from .._module import Module
 from .._serial import saveable
+from .._tcheck import typecheck
 
 __all__ = [
     "Sequential",
@@ -89,6 +90,7 @@ class Multiply(Sequential):
 
 
 @saveable("flarejax.Constant")
+@typecheck
 class Constant(Module):
     """
     Return a constant value. Ignores all inputs.

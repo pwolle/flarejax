@@ -4,10 +4,11 @@ Normalization layers.
 
 import jax.lax as lax
 import jax.numpy as jnp
-from jaxtyping import Array, Float
+from jaxtyping import Array, Float, jaxtyped
 
 from .._module import Module
 from .._serial import saveable
+from .._tcheck import typecheck
 
 
 __all__ = [
@@ -33,6 +34,7 @@ class LayerNorm(Module):
         initialized to the constant zero function.
     """
 
+    @typecheck
     def __init__(
         self,
         eps: float = 1e-6,
@@ -48,6 +50,7 @@ class LayerNorm(Module):
         self.weight = jnp.zeros(x.shape[-1], dtype=x.dtype)
         self.bias = jnp.zeros(x.shape[-1], dtype=x.dtype)
 
+    @jaxtyped(typechecker=typecheck)
     def __call__(
         self,
         x: Float[Array, "*batch dim"],
@@ -88,6 +91,7 @@ class RMSNorm(Module):
         The axis to calculate the root mean square.
     """
 
+    @typecheck
     def __init__(self, eps: float = 1e-6, axis: int = -1) -> None:
         self.eps = eps
         self.axis = axis
@@ -99,6 +103,7 @@ class RMSNorm(Module):
         self.weight = jnp.ones(x.shape[-1], dtype=x.dtype)
         self.bias = jnp.zeros(x.shape[-1], dtype=x.dtype)
 
+    @jaxtyped(typechecker=typecheck)
     def __call__(
         self,
         x: Float[Array, "*batch dim"],

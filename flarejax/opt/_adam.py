@@ -1,8 +1,9 @@
 import jax.numpy as jnp
-from jaxtyping import Array, Float
+from jaxtyping import Array, Float, jaxtyped
 
 from .._module import PathLookup
 from .._serial import saveable
+from .._tcheck import typecheck
 from ._opt import Optimizer
 
 __all__ = [
@@ -37,6 +38,7 @@ class Adam(Optimizer):
         Small value to prevent division by zero in the square root.
     """
 
+    @typecheck
     def __init__(
         self,
         learning_rate: float,
@@ -62,6 +64,7 @@ class Adam(Optimizer):
         if key not in self.v:
             self.v[key] = jnp.zeros_like(x)
 
+    @jaxtyped(typechecker=typecheck)
     def __call__(
         self,
         key: PathLookup,

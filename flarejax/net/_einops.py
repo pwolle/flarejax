@@ -7,7 +7,7 @@ from typing import Literal
 import einops
 
 from .._module import Module
-
+from .._tcheck import typecheck
 
 __all__ = [
     "Rearrange",
@@ -17,6 +17,7 @@ __all__ = [
 ]
 
 
+@typecheck
 class Rearrange(Module):
     """
     Rearrange the input tensor according to the given pattern.
@@ -39,6 +40,7 @@ class Rearrange(Module):
         return einops.rearrange(*args, pattern=self.pattern, **self.dims)
 
 
+@typecheck
 class Reduce(Module):
     """
     Reduce the input tensor according to the given pattern and the reduction
@@ -77,6 +79,7 @@ class Reduce(Module):
         )
 
 
+@typecheck
 class Repeat(Module):
     """
     Repeat the input tensor according to the given pattern. See `einops.repeat`
@@ -99,6 +102,7 @@ class Repeat(Module):
         return einops.repeat(*args, pattern=self.pattern, **self.dims)
 
 
+@typecheck
 class Einsum(Module):
     """
     Wrapper around `einops.einsum`. Performs a contraction on the input tensors
