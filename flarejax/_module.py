@@ -539,7 +539,7 @@ def _build_summary(head: str, body: list[str], tail: str) -> str:
     body_str = body_str.replace("\n", "\n  ")
 
     if body:
-        body_str = f"\n  {body},\n"
+        body_str = f"\n  {body_str},\n"
 
     return head + body_str + tail
 

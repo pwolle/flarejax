@@ -55,6 +55,9 @@ class PathLookup:
 
         return PathLookup(self.path + (other,))
 
+    def __lt__(self, other):
+        return hash(self) < hash(other)
+
 
 # @dataclasses.dataclass(frozen=True)
 # class LookupType:
