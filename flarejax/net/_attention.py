@@ -51,8 +51,6 @@ class DotProductAttention(Module):
         dim: int,
         heads_q: int,
         heads_k: int | None = None,
-        bias: Array | None = None,
-        mask: Array | None = None,
         *,
         scale: float | None = None,
         is_causal: bool = False,
@@ -71,8 +69,6 @@ class DotProductAttention(Module):
         self.heads_q = heads_q
         self.heads_k = heads_k
 
-        self.bias = bias
-        self.mask = mask
         self.scale = scale
         self.is_causal = is_causal
         self.key_value_seq_lengths = key_value_seq_lengths
@@ -87,6 +83,8 @@ class DotProductAttention(Module):
     def __call__(
         self,
         x: Float[Array, "*batch seq dim"],
+        bias: Array | None = None,
+        mask: Array | None = None,
     ) -> Float[Array, "*batch seq dim"]:
         qkv = self.qkv(x)
         qkv = qkv.reshape((*qkv.shape[:-1], -1, self.dim_head))
@@ -99,8 +97,8 @@ class DotProductAttention(Module):
             q,
             k,
             v,
-            bias=self.bias,
-            mask=self.mask,
+            bias=bias,
+            mask=mask,
             scale=self.scale,
             is_causal=self.is_causal,
             key_value_seq_lengths=self.key_value_seq_lengths,

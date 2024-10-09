@@ -10,6 +10,7 @@ import jax
 
 from ._filter import filter_jit
 from ._module import Module
+from ._serial import saveable
 
 __all__ = [
     "Jit",
@@ -32,7 +33,8 @@ def _filter_jit_apply(
     return module(*args, **kwargs)
 
 
-@dataclasses.dataclass
+@saveable("flarejax.Jit")
+@dataclasses.dataclass(repr=False)
 class Jit(Module, Generic[P, T]):
     """
     Call a module with `filter_jit` applied to the `__call__` method.
@@ -49,7 +51,8 @@ class Jit(Module, Generic[P, T]):
         return _filter_jit_apply(self.module, *args, **kwargs)
 
 
-@dataclasses.dataclass
+@saveable("flarejax.Vmap")
+@dataclasses.dataclass(repr=False)
 class Vmap(Module, Generic[P, T]):
     """
     Call a module with `jax.vmap` applied to the `__call__` method.
@@ -82,6 +85,7 @@ class Vmap(Module, Generic[P, T]):
         )(*args, **kwargs)
 
 
+@saveable("flarejax.Partial")
 class Partial(Module, Generic[T]):
     """
     Fix parts of the arguments of a callable module. Can be used in a similar

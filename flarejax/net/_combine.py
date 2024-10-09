@@ -2,7 +2,7 @@
 Combining neural network modules.
 """
 
-from typing import Callable, Self
+from typing import Callable
 
 import jax
 import jax.numpy as jnp
@@ -113,7 +113,7 @@ class Constant(Module):
         key: PRNGKeyArray,
         shape: tuple[int, ...],
         std: float = 1.0,
-    ) -> Self:
+    ):
         """
         Initialize with random normal values.
 
@@ -142,7 +142,7 @@ class Constant(Module):
         shape: tuple[int, ...],
         low: float = -1.0,
         high: float = 1.0,
-    ) -> Self:
+    ):
         """
         Initialize with random uniform values.
 
@@ -168,7 +168,7 @@ class Constant(Module):
         return cls(jrn.uniform(key, shape, minval=low, maxval=high))
 
     @classmethod
-    def full(cls, x: float = 0.0, shape: tuple[int, ...] = ()) -> Self:
+    def full(cls, x: float = 0.0, shape: tuple[int, ...] = ()):
         """
         Initialize with a constant value.
 

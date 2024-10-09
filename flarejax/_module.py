@@ -1,6 +1,6 @@
 import abc
 import copy
-from typing import Any, Hashable, Self, Callable
+from typing import Any, Hashable, Callable
 
 import jax
 import jax.tree_util as jtu
@@ -61,7 +61,7 @@ class PyTreeBase(metaclass=PyTreeMeta):
     """
 
     @abc.abstractmethod
-    def tree_flatten(self: Self):
+    def tree_flatten(self):
         error = "Abstract method 'tree_flatten' must be implemented."
         raise NotImplementedError(error)
 
@@ -94,7 +94,7 @@ class Module(PyTreeBase):
     keys.
     """
 
-    def tree_flatten(self: Self):
+    def tree_flatten(self):
         """
         Convert the module into a tuple of its array valued leaves and
         auxiliary data.

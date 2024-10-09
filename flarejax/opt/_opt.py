@@ -4,7 +4,7 @@ Tools for implementing new gradient based optimizers.
 
 import abc
 import copy
-from typing import Any, Callable, Self, TypeVar
+from typing import Any, Callable, TypeVar
 
 import jax
 import jax.numpy as jnp
@@ -142,7 +142,7 @@ class Optimizer(Module):
         model: T,
         *args: Any,
         **kwargs: Any,
-    ) -> tuple[Self, T, Float[Array, ""]]:
+    ) -> tuple["Optimizer", T, Float[Array, ""]]:
         """
         Apply the optimizer to the module for minimizing the loss function.
 
@@ -162,7 +162,7 @@ class Optimizer(Module):
         Returns
         ---
         Self
-            The optimizer.
+            The optimizer with updated parameters.
 
         Module
             The updated model.
@@ -179,7 +179,7 @@ class Optimizer(Module):
         model: T,
         *args: Any,
         **kwargs: Any,
-    ) -> tuple[Self, T, Float[Array, ""]]:
+    ) -> tuple["Optimizer", T, Float[Array, ""]]:
         model, grads, loss_val = _loss_gradient(
             loss,
             model,
