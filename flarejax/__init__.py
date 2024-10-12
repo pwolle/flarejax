@@ -3,13 +3,13 @@ Base module for FlareJAX. Manipulation and serialization of Modules.
 """
 
 from . import net, opt
-from ._filter import filter_jit
-from ._lookup import AttrLookup, ItemLookup, PathLookup
-from ._module import Module, flatten, unflatten
-from ._random import RandomKey
-from ._serial import load, save, saveable
-from ._tcheck import typecheck
-from ._transform import Jit, Partial, Vmap
+from .flr._filter import filter_jit
+from .flr._lookup import AttrLookup, ItemLookup, PathLookup
+from .flr._module import Module, flatten, unflatten
+from .flr._random import RandomKey
+from .flr._serial import load, save, saveable
+from .flr._tcheck import typecheck
+from .flr._transform import Jit, Partial, Vmap
 
 __all__ = [
     "net",

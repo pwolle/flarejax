@@ -1,9 +1,9 @@
 import jax.numpy as jnp
 from jaxtyping import Array, Float, jaxtyped
 
-from .._module import PathLookup
-from .._serial import saveable
-from .._tcheck import typecheck
+from ..flr._module import PathLookup
+from ..flr._serial import saveable
+from ..flr._tcheck import typecheck
 from ._opt import Optimizer
 
 __all__ = [
@@ -71,7 +71,6 @@ class Adam(Optimizer):
         grad: Float[Array, "*s"],
     ) -> Float[Array, "*s"]:
         self._build(key, grad)
-        self.t = self.t + 1
 
         self.m[key] = self.beta1 * self.m[key] + (1 - self.beta1) * grad
         self.v[key] = self.beta2 * self.v[key] + (1 - self.beta2) * grad**2

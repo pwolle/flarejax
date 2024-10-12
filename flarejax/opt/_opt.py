@@ -8,13 +8,13 @@ from typing import Any, Callable, TypeVar
 
 import jax
 import jax.numpy as jnp
-from jaxtyping import Array, Float, jaxtyped
+from jaxtyping import Array, Float, jaxtyped, UInt32
 
-from .._filter import filter_jit
-from .._module import Module, flatten, unflatten
-from .._lookup import PathLookup, AttrLookup
-from .._tcheck import typecheck
-from .._serial import saveable
+from ..flr._filter import filter_jit
+from ..flr._module import Module, flatten, unflatten
+from ..flr._lookup import PathLookup, AttrLookup
+from ..flr._tcheck import typecheck
+from ..flr._serial import saveable
 
 __all__ = [
     "Optimizer",
@@ -135,6 +135,8 @@ class Optimizer(Module):
     search).
     """
 
+    t: UInt32[Array, ""]
+
     @filter_jit
     def minimize(
         self,
@@ -180,12 +182,21 @@ class Optimizer(Module):
         *args: Any,
         **kwargs: Any,
     ) -> tuple["Optimizer", T, Float[Array, ""]]:
+        if not hasattr(self, "t"):
+            self.t = jnp.zeros((), jnp.uint32)
+
         model, grads, loss_val = _loss_gradient(
             loss,
             model,
             *args,
             **kwargs,
         )
+
+        # if there are no gradiens, do not update the time step
+        # this might be the case if the model parameters are is initialized
+        # lazily i.e only on the first call
+        if grads:
+            self.t = self.t + 1
 
         grads = self._call_map(grads)
         flat = flatten(model)

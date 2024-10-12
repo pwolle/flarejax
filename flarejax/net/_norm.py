@@ -6,9 +6,9 @@ import jax.lax as lax
 import jax.numpy as jnp
 from jaxtyping import Array, Float, jaxtyped
 
-from .._module import Module
-from .._serial import saveable
-from .._tcheck import typecheck
+from ..flr._module import Module
+from ..flr._serial import saveable
+from ..flr._tcheck import typecheck
 
 
 __all__ = [
@@ -38,7 +38,7 @@ class LayerNorm(Module):
     def __init__(
         self,
         eps: float = 1e-6,
-        offset: bool = True,
+        offset: float = 1,
     ) -> None:
         self.eps = eps
         self.offset = offset
@@ -70,8 +70,8 @@ class LayerNorm(Module):
         r = lax.rsqrt(v)
         x = x * r
 
-        weight = self.weight + 1 if self.offset else self.weight
-        x = x * weight + self.bias
+        x = x * (self.weight + self.offset)
+        x = x + self.bias
         return x
 
 
@@ -92,9 +92,13 @@ class RMSNorm(Module):
     """
 
     @typecheck
-    def __init__(self, eps: float = 1e-6, axis: int = -1) -> None:
+    def __init__(
+        self,
+        eps: float = 1e-6,
+        offset: float = 1,
+    ) -> None:
         self.eps = eps
-        self.axis = axis
+        self.offset = offset
 
         self.weight = None
         self.bias = None
@@ -111,11 +115,15 @@ class RMSNorm(Module):
         if self.weight is None or self.bias is None:
             self._build(x)
 
-        v = (x * x).mean(axis=self.axis, keepdims=True)
+        assert self.weight is not None
+        assert self.bias is not None
+
+        v = (x * x).mean(axis=-1, keepdims=True)
         v = jnp.maximum(v, self.eps)
 
         r = lax.rsqrt(v)
         x = x * r
 
-        x = x * self.weight + self.bias
+        x = x * (self.weight + self.offset)
+        x = x + self.bias
         return x

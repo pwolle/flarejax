@@ -6,8 +6,8 @@ from typing import Literal
 
 import einops
 
-from .._module import Module
-from .._tcheck import typecheck
+from ..flr._module import Module
+from ..flr._tcheck import typecheck
 
 __all__ = [
     "Rearrange",

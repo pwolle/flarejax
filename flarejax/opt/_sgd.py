@@ -1,6 +1,6 @@
 from jaxtyping import Array, Float, jaxtyped
 
-from .._tcheck import typecheck
+from ..flr._tcheck import typecheck
 from ._opt import Optimizer
 
 __all__ = [

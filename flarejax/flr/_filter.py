@@ -8,7 +8,7 @@ from typing import Any, Callable, ParamSpec, TypeVar
 
 import jax
 
-from ._module import Module
+from ._module import Module, flatten
 
 __all__ = [
     "filter_jit",
@@ -18,10 +18,15 @@ T = TypeVar("T")
 P = ParamSpec("P")
 
 
-@dataclasses.dataclass(frozen=True)
+# @dataclasses.dataclass(frozen=True)
 class Arguments(Module):
-    args: tuple[Any, ...]
-    kwargs: dict[str, Any]
+    # args: tuple[Any, ...]
+    # kwargs: dict[str, Any]
+
+    def __init__(self, args, kwargs):
+        print(args)
+        self.args = args
+        self.kwargs = kwargs
 
 
 @dataclasses.dataclass(frozen=True)

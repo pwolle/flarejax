@@ -6,9 +6,9 @@ import jax.numpy as jnp
 import jax.random as jrn
 from jaxtyping import Array, Float, PRNGKeyArray, jaxtyped
 
-from .._module import Module
-from .._serial import saveable
-from .._tcheck import typecheck
+from ..flr._module import Module
+from ..flr._serial import saveable
+from ..flr._tcheck import typecheck
 
 __all__ = [
     "Linear",
@@ -177,7 +177,7 @@ class Scale(Module):
     scale: Float[Array, "dim"] | None
 
     @typecheck
-    def __init__(self, offset: bool = True) -> None:
+    def __init__(self, offset: float = 1) -> None:
         self.offset = offset
         self.scale = None
 
@@ -194,11 +194,7 @@ class Scale(Module):
     ) -> Float[Array, "*batch dim"]:
         self._build(x)
         assert self.scale is not None
-
-        if self.offset:
-            return x * (1 + self.scale)
-
-        return x * self.scale
+        return x * (self.scale + self.offset)
 
     @property
     def dim(self) -> int | None:

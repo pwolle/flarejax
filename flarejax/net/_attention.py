@@ -9,9 +9,9 @@ import jax.numpy as jnp
 from jaxtyping import Array, Float, PRNGKeyArray, jaxtyped
 
 from ._linear import Linear
-from .._module import Module
-from .._serial import saveable
-from .._tcheck import typecheck
+from ..flr._module import Module
+from ..flr._serial import saveable
+from ..flr._tcheck import typecheck
 
 
 __all__ = [

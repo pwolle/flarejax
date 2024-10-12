@@ -7,3 +7,4 @@ flarejax
     :no-inheritance-diagram:
     :inherited-members:
     :sort:
+    :undoc-members:

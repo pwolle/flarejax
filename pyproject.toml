@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "flarejax"
-version = "0.4.5"
+version = "0.4.7"
 description = "Flexible Neural Networks in JAX"
 readme = "README.md"
 authors = [

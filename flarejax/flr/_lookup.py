@@ -59,25 +59,25 @@ class PathLookup:
         return hash(self) < hash(other)
 
 
-# @dataclasses.dataclass(frozen=True)
-# class LookupType:
-#     # """
-#     # Create PathLookup objects by storing the lookup of this object.
-#     # """
+@dataclasses.dataclass(frozen=True)
+class LookupType:
+    """
+    Create PathLookup objects by storing the lookup of this object.
+    """
 
-#     _path_lookup: tuple[ItemLookup | AttrLookup, ...] = ()
+    _path_lookup: tuple[ItemLookup | AttrLookup, ...] = ()
 
-#     def __call__(self) -> PathLookup:
-#         return PathLookup(self._path_lookup)
+    def __call__(self) -> PathLookup:
+        return PathLookup(self._path_lookup)
 
-#     def __getattribute__(self, name: str):
-#         if name == "_path_lookup":
-#             return super().__getattribute__(name)
+    def __getattribute__(self, name: str):
+        if name == "_path_lookup":
+            return super().__getattribute__(name)
 
-#         return LookupType(self._path_lookup + (AttrLookup(name),))
+        return LookupType(self._path_lookup + (AttrLookup(name),))
 
-#     def __getitem__(self, key: Hashable):
-#         return LookupType(self._path_lookup + (ItemLookup(key),))
+    def __getitem__(self, key: Hashable):
+        return LookupType(self._path_lookup + (ItemLookup(key),))
 
 
-# Lookup = LookupType(())
+Lookup = LookupType(())

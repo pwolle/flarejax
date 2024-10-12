@@ -16,6 +16,7 @@ extensions = [
     "sphinx.ext.autodoc",
     "sphinx.ext.napoleon",
     "sphinx_automodapi.automodapi",
+    "sphinx_copybutton",
     "myst_parser",
 ]
 

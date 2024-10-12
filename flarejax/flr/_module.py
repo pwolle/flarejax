@@ -273,7 +273,8 @@ def dicts_to_object(
 
         # In this case the best we can do is to return a placeholder, i.e.
         # the path to the reference itself
-        return dicts
+        # return dicts
+        raise ValueError
 
     # if it is not a dictionary, it must be a leaf and can be returned as is
     if not isinstance(dicts, dict):
