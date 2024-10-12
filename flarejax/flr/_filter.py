@@ -24,7 +24,6 @@ class Arguments(Module):
     # kwargs: dict[str, Any]
 
     def __init__(self, args, kwargs):
-        print(args)
         self.args = args
         self.kwargs = kwargs
 

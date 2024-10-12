@@ -255,7 +255,7 @@ def object_to_dicts(
 
 
 @typecheck
-def dicts_to_object(
+def dicts_to_object2(
     dicts: Any,
     /,
     path: PathLookup | None = None,
@@ -299,7 +299,7 @@ def dicts_to_object(
             key_path = path + key
 
             # apply the conversion recursively
-            result[key.key] = dicts_to_object(value, key_path, refs)
+            result[key.key] = dicts_to_object2(value, key_path, refs)
 
         return result
 
@@ -311,7 +311,7 @@ def dicts_to_object(
         for key in keys:
             # key_path = Lookup((*path.path, key))
             key_path = path + key
-            result.append(dicts_to_object(dicts[key], key_path, refs))
+            result.append(dicts_to_object2(dicts[key], key_path, refs))
 
         return result
 
@@ -322,7 +322,7 @@ def dicts_to_object(
         for key in keys:
             # key_path = Lookup((*path.path, key))
             key_path = path + key
-            result.append(dicts_to_object(dicts[key], key_path, refs))
+            result.append(dicts_to_object2(dicts[key], key_path, refs))
 
         result = tuple(result)
 
@@ -338,7 +338,7 @@ def dicts_to_object(
         for key, value in dicts.items():
             # key_path = Lookup((*path.path, key))
             key_path = path + key
-            val = dicts_to_object(value, key_path, refs)
+            val = dicts_to_object2(value, key_path, refs)
             object.__setattr__(new, key.key, val)
 
         return new
@@ -346,6 +346,100 @@ def dicts_to_object(
     # should be unreachable for objects that were created with `object_to_dicts`
     error = f"Cannot reconstruct `{cls}`."
     raise ValueError(error)
+
+
+@typecheck
+def dicts_to_object(dicts_: Any):
+    refs = {}
+
+    def dfs(dicts, path):
+        if isinstance(dicts, PathLookup):
+            if dicts in refs:
+                return refs[dicts]
+
+            obj_cur = dicts
+            for key in dicts.path:
+                if isinstance(key, ItemLookup):
+                    obj_cur = obj_cur[key.key]  # type: ignore
+
+                if isinstance(key, AttrLookup):
+                    obj_cur = getattr(obj_cur, key.key)
+
+            return dfs(obj_cur, path)
+
+        # if it is not a dictionary, it must be a leaf and can be returned as is
+
+        if not isinstance(dicts, dict):
+            return dicts
+
+        # shallow copy to avoid modifying the original through the pop
+        dicts = copy.copy(dicts)
+        cls = dicts.pop(TYPE_KEY)
+
+        if cls is dict:
+            result = {}
+
+            # since the result is mutable we can already store it in the references
+            # such that if a reference cycle comes up the object can simply be
+            # retrieved from the references dictionary
+            refs[path] = result
+
+            for key, value in dicts.items():
+                # the path to the current child is one level deeper than the
+                # path to the current object
+                # key_path = Lookup((*path.path, key))
+                key_path = path + key
+
+                # apply the conversion recursively
+                result[key.key] = dicts_to_object2(value, key_path, refs)
+
+            return result
+
+        if cls is list:
+            keys = sorted(dicts.keys(), key=lambda key: key.key)
+            result = []
+            refs[path] = result
+
+            for key in keys:
+                # key_path = Lookup((*path.path, key))
+                key_path = path + key
+                result.append(dicts_to_object2(dicts[key], key_path, refs))
+
+            return result
+
+        if cls is tuple:
+            keys = sorted(dicts.keys(), key=lambda key: key.key)
+            result = []
+
+            for key in keys:
+                # key_path = Lookup((*path.path, key))
+                key_path = path + key
+                result.append(dicts_to_object2(dicts[key], key_path, refs))
+
+            result = tuple(result)
+
+            # The result can only be stored after the tuple is created,
+            # because the tupe is immutable
+            refs[path] = result
+            return result
+
+        if issubclass(cls, Module):
+            new = cls.__new__(cls)
+            refs[path] = new
+
+            for key, value in dicts.items():
+                # key_path = Lookup((*path.path, key))
+                key_path = path + key
+                val = dicts_to_object2(value, key_path, refs)
+                object.__setattr__(new, key.key, val)
+
+            return new
+
+        # should be unreachable for objects that were created with `object_to_dicts`
+        error = f"Cannot reconstruct `{cls}`."
+        raise ValueError(error)
+
+    return dfs(dicts_, PathLookup(()))
 
 
 @typecheck
