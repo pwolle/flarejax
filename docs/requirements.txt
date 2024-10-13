@@ -1,0 +1,6 @@
+sphinx
+sphinx-autodoc-typehints
+sphinx-toolbox
+myst-parser
+sphinx_copybutton
+sphinx-automodapi
