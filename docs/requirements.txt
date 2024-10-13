@@ -5,3 +5,8 @@ myst-parser
 sphinx_copybutton
 sphinx-automodapi
 sphinx-book-theme
+jax>=0.4.33
+jaxlib>=0.4.33
+jaxtyping>=0.2.34
+einops>=0.8.0
+beartype>=0.18.5
