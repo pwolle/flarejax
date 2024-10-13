@@ -1,22 +1,32 @@
 Welcome to FlareJax's documentation!
-=====================================
+####################################
 
-.. title:: FlareJax Docs
 .. toctree::
     :maxdepth: 2
     :hidden:
-    :caption: Api
+    :caption: The FlareJax Api
 
     flarejax
     net
     opt
 
+
+    
 .. toctree::
     :maxdepth: 2
     :hidden:
-    :caption: Guide
+    :caption: Extending FlareJax
 
-    How it works
+    New Modules
+    New Optimizers
+
+.. toctree::
+    :maxdepth: 2
+    :hidden:
+    :caption: Under the Hood
+
+    PyTrees and References
+    Serialization
 
 
 FlareJax is a Python library for building neural networks and optimizers in Jax.
@@ -31,7 +41,7 @@ Features include:
 - As a small codebase, it is relatively easy to understand and extend
 
 Installation
-------------
+=============
 FlareJax can be installed via pip. It requires Python 3.10 or higher and Jax 0.4.33 or higher.
 
 .. code-block:: bash
@@ -40,7 +50,7 @@ FlareJax can be installed via pip. It requires Python 3.10 or higher and Jax 0.4
 
 
 Quick Example
--------------
+=============
 Defining a neural network module is as simple as subclassing ``Module`` and implementing the ``__call__`` method.
 Of course other methods can be implemented as well and will also be treated as callable PyTrees.
 
@@ -96,7 +106,7 @@ Saving the model to a ``.npz`` file can be done by calling ``save``.
 
 
 Api
----
+===
 The following modules are available:
 
 - :mod:`flarejax` for core functionality, including the ``Module`` base class
@@ -105,8 +115,9 @@ The following modules are available:
 
 
 See also
-----------
+========
 - Jax is a library for numerical computing that is designed to be composable and fast. `Jax Docs <https://jax.readthedocs.io/en/latest/>`_
 - FlareJax is heavily inspired by the awesome `Equinox library <https://github.com/patrick-kidger/equinox>`_
 - Many of the principles of mutability are inspired by PyTorch's `torch.nn.Module <https://pytorch.org/docs/stable/generated/torch.nn.Module.html>`_
 - NNX is a library for neural networks in flax that also supports mutability. `NNX Docs <https://flax.readthedocs.io/en/v0.8.3/experimental/nnx/index.html/>`_
+- Always feel free to reach out to me via `email <mailto:paul.wollenhaupt@gmail.com>`_

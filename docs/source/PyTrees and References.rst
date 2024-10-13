@@ -1,5 +1,5 @@
-How it works
-############
+PyTrees and References
+######################
 
 Jax PyTrees
 ===========
@@ -15,10 +15,9 @@ For interfacing with Jax (i.e. ``jax.jit``) it is necessary to define a way to f
     print(f"Data: {flat}, Structure: {aux}")
 
 
-Which gives us ``flat```which is an array of values that Jax hopefully understands and ``aux`` which a is a hashable object, that describes how to reconstruct the original PyTree.
+Which gives us ``flat`` which is an array of values that Jax hopefully understands and ``aux`` which a is a hashable object, that describes how to reconstruct the original PyTree.
 
 .. code-block:: none
-    :caption: Output
 
     Data: [1, 2, 3], Structure: PyTreeDef({'a': *, 'b': {'c': *, 'd': *}})
 
@@ -55,7 +54,6 @@ Here after flattening the outer part of ``y1``, i.e. the dictionary, the two arr
 When modifying the reconstructed object ``y2`` the shared reference is broken and the modification is only applied to one of the two arrays.
 
 .. code-block:: none
-    :caption: Output
 
     Leaves: [1, 2, 1, 2], Structure PyTreeDef({'a': [*, *], 'b': [*, *]})
     Modified y1 {'a': [3, 2], 'b': [3, 2]}
@@ -80,7 +78,6 @@ If a shared reference is encountered, the value is replaced by a description of 
 The reconstructed object has the same shared references as the original object.
 
 .. code-block:: none
-    :caption: Output
 
     {obj[a][1]: 2,
     obj[b]: obj[a],
@@ -108,7 +105,6 @@ If an object or its children contains a reference to itself, the tree based flat
 
 
 .. code-block:: none
-    :caption: Output
 
     [1, 2, [...]]
     Error: Circular reference
@@ -126,7 +122,6 @@ The above describe approach of FlareJax flattening and unflattening process can 
 
 
 .. code-block:: none
-    :caption: Output
 
     {obj[2]: obj,
     obj[1]: 2,
@@ -135,7 +130,7 @@ The above describe approach of FlareJax flattening and unflattening process can 
     [1, 2, [...]]
 
 
-Just in time Compilation with ``filter_jit``
+Filter Jit
 ============================================
 Jax provides just in time compilation of functions with the ``jax.jit`` transformation.
 To enable the compilation all of the inputs have to be converted into a representation that can be compiled by Jax.
@@ -143,9 +138,10 @@ The intermediate representation consists of a list of arrays/numbers and some ha
 
 By default the PyTree API is used to perform this conversion. This gives us two options: Either we restrict the leaves of the PyTree to only be valid data types or we mark them as static afterwards. The first option is unfortunate, since the PyTree API can be usfull for modifying objects in a systematic way and the second option can be cumbersome.
 
-Since FlareJax already introduces its own flattening and unflattening process, it can also has a new version of ``jax.jit`` that automatically treats all objects, which are not ``jax.Array``s as static arguments and tracks alls shared & cyclical references of the input, even between different arguments.
+Since FlareJax already introduces its own flattening and unflattening process, it can also has a new version of ``jax.jit`` that automatically treats all objects, which are not ``jax.Array`` as static arguments and tracks alls shared & cyclical references of the input, even between different arguments.
 
 .. code-block::
+
     def func(v):
         v["a"][0] += 1
         return v
@@ -153,24 +149,19 @@ Since FlareJax already introduces its own flattening and unflattening process, i
     x = [jnp.zeros(())]
     y = {"a": x, "b": x}  # shared reference
 
-    print(jax.jit(func)(y))
-    print(flr.filter_jit(func)(y))
+    print(jax.jit(func)(y))  # breaks shared references
+
+    y = flr.filter_jit(func)(y)
+    print(y)
+
+    y["a"][0] += 1
+    print(y)
 
 
-.. This is unfortunate, since the PyTree API can also be very usefull for modifying objects in a systematic way and restricting the leaves to only be valid data types can be very limiting and the alternative of marking static arguments can be cumbersome.
+While ``jax.jit`` breaks the shared reference between ``y["a"]`` and ``y["b"]``, ``flr.filter_jit`` keeps it intact, both inside the function and when returning the result.
 
+.. code-block:: none
 
-.. Therefore, when using ``jax.jit`` all inputs have to be PyTrees with only valid data types  as leaves, valid data types themselves or have to be marked as static arguments.
-.. By default the PyTree API is used 
-
-
-.. This is very unfortunate, since the PyTree API can also be very usefull for modifying objects in a systematic way and restricting the leaves to only be valid data types can be very limiting.
-
-
-
-.. Since ``jax.jit`` uses 
-
-
-
-
-.. FlareJax provides a helper function ``filter_jit``, which automatically treats all objects, which are not ``jax.Array``s as static arguments and tracks alls shared & cyclical references of the input, even between different arguments.
+    {'a': [Array(1., dtype=float32)], 'b': [Array(0., dtype=float32)]}
+    {'a': [Array(1., dtype=float32)], 'b': [Array(1., dtype=float32)]}
+    {'a': [Array(2., dtype=float32)], 'b': [Array(2., dtype=float32)]}

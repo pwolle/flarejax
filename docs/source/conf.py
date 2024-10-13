@@ -17,6 +17,7 @@ extensions = [
     "sphinx.ext.napoleon",
     "sphinx_automodapi.automodapi",
     "sphinx_copybutton",
+    "sphinx_toolbox.code",
     "myst_parser",
 ]
 
@@ -29,6 +30,10 @@ exclude_patterns = []
 
 html_theme = "sphinx_book_theme"
 html_static_path = ["_static"]
+
+html_logo = "_static/logo_wide_small.png"
+html_favicon = "_static/favicon.ico"
+
 
 html_title = "FlareDocs"
 
