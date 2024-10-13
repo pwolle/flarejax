@@ -2,31 +2,31 @@ Welcome to FlareJax's documentation!
 ####################################
 
 .. toctree::
-    :maxdepth: 2
-    :hidden:
-    :caption: The FlareJax Api
+	:maxdepth: 2
+	:hidden:
+	:caption: The FlareJax Api
 
-    flarejax
-    net
-    opt
+	flarejax
+	net
+	opt
 
 
-    
+	
 .. toctree::
-    :maxdepth: 2
-    :hidden:
-    :caption: Extending FlareJax
+	:maxdepth: 2
+	:hidden:
+	:caption: Extending FlareJax
 
-    New Modules
-    New Optimizers
+	new_modules
+	new_optimizers
 
 .. toctree::
-    :maxdepth: 2
-    :hidden:
-    :caption: Under the Hood
+	:maxdepth: 2
+	:hidden:
+	:caption: Under the Hood
 
-    PyTrees and References
-    Serialization
+	pytrees_refs
+	serialize
 
 
 FlareJax is a Python library for building neural networks and optimizers in Jax.
@@ -46,7 +46,7 @@ FlareJax can be installed via pip. It requires Python 3.10 or higher and Jax 0.4
 
 .. code-block:: bash
 
-    pip install flarejax
+	pip install flarejax
 
 
 Quick Example
@@ -56,53 +56,53 @@ Of course other methods can be implemented as well and will also be treated as c
 
 .. code-block:: python
 
-    @flr.saveable("Example:Linear")  # optional, make saveable
-    class Linear(flr.Module):
-        def __init__(self, key: PRNGKeyArray, dim: int):
-            self.dim = dim
-            self.w = None
+	@flr.saveable("Example:Linear")  # optional, make saveable
+	class Linear(flr.Module):
+		def __init__(self, key: PRNGKeyArray, dim: int):
+			self.dim = dim
+			self.w = None
 
-        def __call__(self, x):
-            # lazy initialization dependent on the input shape
-            if self.w is None:
-                self.w = jrn.normal(key, (x.shape[-1], self.dim))
+		def __call__(self, x):
+			# lazy initialization dependent on the input shape
+			if self.w is None:
+				self.w = jrn.normal(key, (x.shape[-1], self.dim))
 
-            return x @ self.w
+			return x @ self.w
 
-    layer = Linear(jrn.PRNGKey(0), 3)
-    x = jnp.zeros((1, 4))
-    
-    # the model is initialized after the first call
-    y = layer(x)
-    assert layer.w.shape == (4, 3) 
+	layer = Linear(jrn.PRNGKey(0), 3)
+	x = jnp.zeros((1, 4))
+	
+	# the model is initialized after the first call
+	y = layer(x)
+	assert layer.w.shape == (4, 3) 
 
 
 Optimizing the paramteres is as simpel as defining a loss function, an optimizer and calling ``opt.minimize``.
 
 .. code-block:: python
 
-    # the loss function must takes the model as first argument
-    def loss_fn(model, x, y):
-        return jnp.mean((model(x) - y) ** 2)
+	# the loss function must takes the model as first argument
+	def loss_fn(model, x, y):
+		return jnp.mean((model(x) - y) ** 2)
 
-    x = jnp.zeros((1, 4))
-    y = jnp.zeros((1, 3))
+	x = jnp.zeros((1, 4))
+	y = jnp.zeros((1, 3))
 
-    opt = flr.opt.Adam(3e-4)
-    
-    # automatically jit-ed
-    opt, model, loss = opt.minimize(loss, layer, x, y)  
+	opt = flr.opt.Adam(3e-4)
+	
+	# automatically jit-ed
+	opt, model, loss = opt.minimize(loss, layer, x, y)  
 
 
 Saving the model to a ``.npz`` file can be done by calling ``save``.
 
 .. code-block:: python
 
-    flr.save(layer, "model.npz")
+	flr.save(layer, "model.npz")
 
-    # load the model
-    layer = flr.load("model.npz")
-    assert isinstance(layer, Linear)
+	# load the model
+	layer = flr.load("model.npz")
+	assert isinstance(layer, Linear)
 
 
 Api
