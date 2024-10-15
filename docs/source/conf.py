@@ -18,11 +18,18 @@ extensions = [
     "sphinx_automodapi.automodapi",
     "sphinx_copybutton",
     "sphinx_toolbox.code",
+    "sphinx_toolbox.github",
+    # "sphinx_toolbox.source",
+    "sphinx.ext.viewcode",
     "myst_parser",
 ]
 
 templates_path = ["_templates"]
 exclude_patterns = []
+
+github_username = "pwolle"
+github_repository = "flarejax"
+github_branch = "main"
 
 
 # -- Options for HTML output -------------------------------------------------
