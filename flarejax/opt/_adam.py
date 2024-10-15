@@ -65,10 +65,11 @@ class Adam(Optimizer):
             self.v[key] = jnp.zeros_like(x)
 
     @jaxtyped(typechecker=typecheck)
-    def __call__(
+    def call_param(
         self,
         key: PathLookup,
         grad: Float[Array, "*s"],
+        **_,
     ) -> Float[Array, "*s"]:
         self._build(key, grad)
 
@@ -80,3 +81,9 @@ class Adam(Optimizer):
 
         grad_new = m_hat / (jnp.sqrt(v_hat + self.eps_root) + self.eps)
         return self.learning_rate * grad_new
+
+    def call_model(self, grads: dict, **_):
+        if grads:
+            self.t = self.t + 1
+
+        return grads

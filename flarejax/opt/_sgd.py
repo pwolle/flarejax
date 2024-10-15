@@ -30,5 +30,5 @@ class SGD(Optimizer):
         self.lr = learning_rate
 
     @jaxtyped(typechecker=typecheck)
-    def __call__(self, _, grad: Float[Array, "*s"]) -> Float[Array, "*s"]:
+    def call_param(self, grad: Float[Array, "*s"], **_) -> Float[Array, "*s"]:
         return grad * self.lr

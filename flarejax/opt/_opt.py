@@ -8,7 +8,7 @@ from typing import Any, Callable, TypeVar
 
 import jax
 import jax.numpy as jnp
-from jaxtyping import Array, Float, jaxtyped, UInt32
+from jaxtyping import Array, Float, UInt32
 
 from ..flr._filter import filter_jit
 from ..flr._module import Module, flatten, unflatten
@@ -182,73 +182,83 @@ class Optimizer(Module):
         *args: Any,
         **kwargs: Any,
     ) -> tuple["Optimizer", T, Float[Array, ""]]:
-        if not hasattr(self, "t"):
-            self.t = jnp.zeros((), jnp.uint32)
-
-        model, grads, loss_val = _loss_gradient(
+        model, grads, loss_value = _loss_gradient(
             loss,
             model,
             *args,
             **kwargs,
         )
 
-        # if there are no gradiens, do not update the time step
-        # this might be the case if the model parameters are is initialized
-        # lazily i.e only on the first call
-        if grads:
-            self.t = self.t + 1
-
-        grads = self._call_map(grads)
         flat = flatten(model)
+        params = {k: v for k, v in flat.items() if k in grads}
+
+        grads = self(
+            loss=loss_value,
+            grads=grads,
+            params=params,
+        )
 
         for key, value in grads.items():
             flat[key] = flat[key] - value
 
         model = unflatten(flat)
-        return self, model, loss_val
+        return self, model, loss_value
 
-    @typecheck
-    def _call_map(
-        self, grads: dict[PathLookup, Float[Array, "..."]]
+    def call_param(self, grad: Float[Array, "*s"], **_) -> Float[Array, "*s"]:
+        return grad
+
+    def call_model(
+        self,
+        grads: dict[PathLookup, Float[Array, "..."]],
+        **_,
     ) -> dict[PathLookup, Float[Array, "..."]]:
-        # shallow copy to avoid modifying the original dictionary
-        grads = copy.copy(grads)
-
-        for key, value in grads.items():
-            grads[key] = self(key, value)
-
         return grads
 
-    @abc.abstractmethod
     def __call__(
         self,
-        key: PathLookup,
-        grad: Float[Array, "*s"],
-    ) -> Float[Array, "*s"]:
-        raise NotImplementedError
+        loss: Float[Array, ""],
+        grads: dict[PathLookup, Float[Array, "..."]],
+        params: dict[PathLookup, Float[Array, "..."]],
+    ) -> dict[PathLookup, Float[Array, "..."]]:
+        grads = self.call_model(
+            loss=loss,
+            params=params,
+            grads=grads,
+        )
+
+        for key, grad in grads.items():
+            grads[key] = self.call_param(
+                key=key,
+                grad=grad,
+                param=params[key],
+            )
+
+        return grads
 
 
 class Chain(Optimizer):
     """
-    Combine multiple gradient transformations into a signle optimizer.
+    Combine multiple gradient transformations into a single optimizer.
     """
 
     def __init__(
         self,
-        *optimizers: Callable[
-            [PathLookup, Float[Array, "*s"]],
-            Float[Array, "*s"],
-        ],
+        *optimizers: Optimizer,
     ) -> None:
         self.optimizers = optimizers
 
-    @jaxtyped(typechecker=typecheck)
     def __call__(
         self,
-        key: PathLookup,
-        grad: Float[Array, "*s"],
-    ) -> Float[Array, "*s"]:
+        *,
+        loss: Float[Array, ""],
+        params: dict[PathLookup, Float[Array, "..."]],
+        grads: dict[PathLookup, Float[Array, "..."]],
+    ) -> dict[PathLookup, Float[Array, "..."]]:
         for opt in self.optimizers:
-            grad = opt(key, grad)
+            grads = opt(
+                loss=loss,
+                params=params,
+                grads=grads,
+            )
 
-        return grad
+        return grads

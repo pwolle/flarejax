@@ -1,4 +1,4 @@
-Welcome to FlareJax's documentation!
+Welcome to FlareJax's Documentation!
 ####################################
 
 .. toctree::
@@ -10,8 +10,6 @@ Welcome to FlareJax's documentation!
 	net
 	opt
 
-
-	
 .. toctree::
 	:maxdepth: 2
 	:hidden:
@@ -34,10 +32,10 @@ It is designed to minimize the time between a new research idea and its implemen
 Features include:
 
 - Mutable modules for quick and dirty modifications via ``Module``
-- Serialization of modules via ``@saveable, save`` and ``load``
-- Systematically modifying modules by using ``flatten`` and ``unflatten``
-- Safely handling shared/cyclical references and static arguments through ``filter_jit``
-- Commonly used NN layers and optimizers are included
+- Safely handles shared/cyclical references and static arguments through ``filter_jit``
+- Systematically apply changes to nested modules with using ``flatten`` and ``unflatten``
+- Serialization of modules via ``@saveable``, ``save`` and ``load``
+- Commonly used NN layers and optimizers included
 - As a small codebase, it is relatively easy to understand and extend
 
 Installation
@@ -77,11 +75,11 @@ Of course other methods can be implemented as well and will also be treated as c
 	assert layer.w.shape == (4, 3) 
 
 
-Optimizing the paramteres is as simpel as defining a loss function, an optimizer and calling ``opt.minimize``.
+Optimizing the parameters is as simple as defining a loss function, an optimizer and calling ``opt.minimize``.
 
 .. code-block:: python
 
-	# the loss function must takes the model as first argument
+	# the loss function must take the model as first argument
 	def loss_fn(model, x, y):
 		return jnp.mean((model(x) - y) ** 2)
 
@@ -100,7 +98,7 @@ Saving the model to a ``.npz`` file can be done by calling ``save``.
 
 	flr.save(layer, "model.npz")
 
-	# load the model
+	# load the modelCommonly used NN layers and optimizers included
 	layer = flr.load("model.npz")
 	assert isinstance(layer, Linear)
 
@@ -110,8 +108,8 @@ Api
 The following modules are available:
 
 - :mod:`flarejax` for core functionality, including the ``Module`` base class
-- :mod:`net` for neural network layers and utilities
-- :mod:`opt` for optimizers, includes the ``Optimizer`` base class
+- :mod:`flarejax.net` for neural network layers and utilities
+- :mod:`flarejax.opt` for optimizers, includes the ``Optimizer`` base class
 
 
 See also
