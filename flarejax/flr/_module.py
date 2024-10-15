@@ -12,6 +12,10 @@ __all__ = [
     "Module",
     "flatten",
     "unflatten",
+    "object_to_dicts",
+    "dicts_to_object",
+    "MethodWrap",
+    "MethodDescriptor",
 ]
 
 
@@ -138,6 +142,10 @@ class Module(PyTreeBase):
     @property
     @typecheck
     def frozen(self) -> bool:
+        """
+        Whether the parameters of the module are included in the optimization.
+        """
+
         if not hasattr(self, "_frozen"):
             self._frozen = False
 
