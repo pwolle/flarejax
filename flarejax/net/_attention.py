@@ -20,6 +20,48 @@ __all__ = [
 ]
 
 
+def normalize(x: Array, axis: int) -> Array:
+    """
+    Normalize the input tensor along the given axis.
+
+    Parameters
+    ---
+    x: Array
+        The input tensor.
+
+    axis: int
+        The axis along which to normalize the tensor.
+
+    Returns
+    ---
+    Array
+        The normalized tensor.
+    """
+    n = jnp.linalg.norm(x, axis=axis, keepdims=True)
+    n = jnp.maximum(n, 1e-6)
+    return x / n
+
+
+def softcap(x: Array, cap: float) -> Array:
+    """
+    Apply a soft cap to the input tensor.
+
+    Parameters
+    ---
+    x: Array
+        The input tensor.
+
+    cap: float
+        The cap value.
+
+    Returns
+    ---
+    Array
+        The capped tensor.
+    """
+    return jnn.tanh(x / cap) * cap
+
+
 @saveable("flarejax.net.DotProductAttention")
 class DotProductAttention(Module):
     """
@@ -52,6 +94,8 @@ class DotProductAttention(Module):
         heads_q: int,
         heads_k: int | None = None,
         *,
+        norm: bool = False,
+        tanh_cap: float | None = None,
         scale: float | None = None,
         is_causal: bool = False,
         key_value_seq_lengths: Array | None = None,
@@ -68,6 +112,9 @@ class DotProductAttention(Module):
 
         self.heads_q = heads_q
         self.heads_k = heads_k
+
+        self.norm = norm
+        self.tanh_cap = tanh_cap
 
         self.scale = scale
         self.is_causal = is_causal
@@ -88,6 +135,12 @@ class DotProductAttention(Module):
     ) -> Float[Array, "*batch seq dim"]:
         qkv = self.qkv(x)
         qkv = qkv.reshape((*qkv.shape[:-1], -1, self.dim_head))
+
+        if self.norm:
+            qkv = normalize(qkv, axis=-1)
+
+        if self.tanh_cap is not None:
+            qkv = softcap(qkv, self.tanh_cap)
 
         q = qkv[..., : self.heads_q, :]
         k = qkv[..., self.heads_q : self.heads_q + self.heads_k, :]

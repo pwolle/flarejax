@@ -9,7 +9,7 @@ __all__ = [
 
 
 class Trapezoid(Optimizer):
-    def __ini__(
+    def __init__(
         self,
         total: int,
         warm: int,
